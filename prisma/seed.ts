@@ -1,11 +1,21 @@
 import "dotenv/config";
-import { PrismaTiDBCloud } from "@tidbcloud/prisma-adapter";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
 const { PrismaClient } = require("@prisma/client");
 import bcrypt from "bcryptjs";
 
 function createPrismaClient() {
-  const adapter = new PrismaTiDBCloud({ url: process.env.DATABASE_URL! });
+  const url = new URL(process.env.DATABASE_URL!);
+
+  const adapter = new PrismaMariaDb({
+    host: url.hostname,
+    port: Number(url.port),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.slice(1),
+    connectionLimit: 5,
+  });
+
   return new PrismaClient({ adapter });
 }
 
