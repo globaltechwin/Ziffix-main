@@ -1,376 +1,982 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion } from "motion/react";
-import { MoreHorizontal, Eye, Pencil, XCircle, CalendarPlus } from "lucide-react";
-import { PageHeader } from "@/components/admin/shared/PageHeader";
-import { SearchFilter } from "@/components/admin/shared/SearchFilter";
-import { StatusBadge } from "@/components/admin/shared/StatusBadge";
-import { ConfirmDialog } from "@/components/admin/shared/ConfirmDialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Calendar,
+  Check,
+  ChevronDown,
+  Clock,
+  Loader2,
+  Search,
+  UserRound,
+  X,
+} from "lucide-react";
 
-import { toast } from "sonner";
-
-const tabs = ["All", "Pending", "In Progress", "Completed", "Cancelled"] as const;
-
-interface ApiBooking {
+interface Customer {
   id: string;
+  name: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+interface Technician {
+  id: string;
+  name: string | null;
+  phone?: string | null;
+  email?: string | null;
+}
+
+interface Service {
+  id: string;
+  name: string;
+  basePrice?: number;
+}
+
+interface Booking {
+  id: string;
+  customerId: string;
+  technicianId?: string | null;
+  serviceId: string;
   status: string;
   scheduledDate: string;
   scheduledTime: string;
   address: string;
-  notes: string | null;
+  notes?: string | null;
   totalAmount: number;
-  paymentStatus: string;
-  customer: { id: string; name: string; phone: string };
-  technician: { id: string; name: string; phone: string } | null;
-  service: { id: string; name: string; category?: string };
+  createdAt?: string;
+  updatedAt?: string;
+
+  // Current API response
+  customer?: Customer | null;
+
+  // Backward compatibility
+  user_booking_customerIdTouser?: Customer | null;
+
+  user_booking_technicianIdTouser?: Technician | null;
+  service?: Service | null;
 }
 
-interface ApiTechnician {
-  id: string;
-  name: string | null;
-  phone: string;
+type BookingTab =
+  | "All"
+  | "Pending"
+  | "In Progress"
+  | "Completed"
+  | "Cancelled";
+
+const tabs: BookingTab[] = [
+  "All",
+  "Pending",
+  "In Progress",
+  "Completed",
+  "Cancelled",
+];
+
+const statusLabels: Record<string, string> = {
+  pending: "Pending",
+  confirmed: "Confirmed",
+  in_progress: "In Progress",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+const statusClasses: Record<string, string> = {
+  pending: "border-amber-200 bg-amber-50 text-amber-700",
+  confirmed: "border-blue-200 bg-blue-50 text-blue-700",
+  in_progress: "border-purple-200 bg-purple-50 text-purple-700",
+  completed: "border-green-200 bg-green-50 text-green-700",
+  cancelled: "border-red-200 bg-red-50 text-red-700",
+};
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
-interface ApiService {
-  id: string;
-  name: string;
-  category: string;
+function statusClass(status: string) {
+  return (
+    statusClasses[status] ||
+    "border-slate-200 bg-slate-50 text-slate-700"
+  );
 }
 
-interface ApiCustomer {
-  id: string;
-  name: string | null;
-  phone: string;
+function statusLabel(status: string) {
+  return statusLabels[status] || status;
+}
+
+function money(value: number) {
+  return `₹${Number(value || 0).toLocaleString("en-IN")}`;
+}
+
+function getCustomer(booking: Booking): Customer | null {
+  return (
+    booking.customer ??
+    booking.user_booking_customerIdTouser ??
+    null
+  );
 }
 
 export default function AdminBookingsPage() {
-  const [data, setData] = useState<ApiBooking[]>([]);
-  const [technicians, setTechnicians] = useState<ApiTechnician[]>([]);
-  const [services, setServices] = useState<ApiService[]>([]);
-  const [customers, setCustomers] = useState<ApiCustomer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [activeTab, setActiveTab] = useState<BookingTab>("All");
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<string>("All");
-  const [viewBooking, setViewBooking] = useState<ApiBooking | null>(null);
-  const [editBooking, setEditBooking] = useState<ApiBooking | null>(null);
-  const [cancelId, setCancelId] = useState<string | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [technicianOpenId, setTechnicianOpenId] = useState<string | null>(
+    null,
+  );
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(
+    null,
+  );
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [bookingsRes, techsRes, servicesRes, customersRes] = await Promise.all([
-          fetch("/api/admin/bookings"),
-          fetch("/api/admin/technicians"),
-          fetch("/api/admin/services"),
-          fetch("/api/admin/customers"),
-        ]);
-        const [bookingsData, techsData, servicesData, customersData] = await Promise.all([
-          bookingsRes.json(),
-          techsRes.json(),
-          servicesRes.json(),
-          customersRes.json(),
-        ]);
-        setData(bookingsData.bookings ?? []);
-        setTechnicians(techsData.technicians ?? []);
-        setServices(servicesData.services ?? []);
-        setCustomers(customersData.customers ?? []);
-      } catch {
-        toast.error("Failed to load bookings data");
-      } finally {
-        setLoading(false);
+  const [drafts, setDrafts] = useState<
+    Record<
+      string,
+      {
+        status: string;
+        technicianId: string | null;
       }
-    }
-    load();
-  }, []);
+    >
+  >({});
 
-  const filtered = data.filter((b) => {
-    const q = search.toLowerCase();
-    const techName = b.technician?.name ?? "";
-    const matchesSearch =
-      b.id.toLowerCase().includes(q) ||
-      b.service.name.toLowerCase().includes(q) ||
-      techName.toLowerCase().includes(q);
-    if (activeTab === "All") return matchesSearch;
-    return matchesSearch && b.status.toLowerCase().replace(" ", "_") === activeTab.toLowerCase().replace(" ", "_");
-  });
-
-  const handleCancel = async () => {
-    if (!cancelId) return;
-    try {
-      const res = await fetch("/api/admin/bookings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId: cancelId, status: "cancelled" }),
-      });
-      if (!res.ok) throw new Error();
-      setData((prev) =>
-        prev.map((b) => (b.id === cancelId ? { ...b, status: "cancelled" } : b))
-      );
-      toast.success("Booking cancelled");
-    } catch {
-      toast.error("Failed to cancel booking");
-    } finally {
-      setCancelId(null);
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const payload = {
-      customerId: fd.get("customer") as string,
-      serviceId: fd.get("service") as string,
-      technicianId: fd.get("technician") as string || null,
-      scheduledDate: fd.get("date") as string,
-      scheduledTime: fd.get("time") as string,
-      address: fd.get("address") as string,
-      totalAmount: parseInt(fd.get("amount") as string) || 0,
-      notes: (fd.get("notes") as string) || null,
-    };
-    try {
-      const res = await fetch("/api/admin/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error();
-      const { booking } = await res.json();
-      setData((prev) => [booking, ...prev]);
-      setCreateOpen(false);
-      toast.success("Booking created successfully");
-    } catch {
-      toast.error("Failed to create booking");
-    }
-  };
-
-  const handleReschedule = async () => {
-    if (!editBooking) return;
-    try {
-      const res = await fetch("/api/admin/bookings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId: editBooking.id }),
-      });
-      if (!res.ok) throw new Error();
-      setEditBooking(null);
-      toast.success("Booking rescheduled");
-    } catch {
-      toast.error("Failed to reschedule booking");
-    }
-  };
-
-  if (loading) {
+  function getDraft(booking: Booking) {
     return (
-      <div>
-        <PageHeader title="Bookings" description="View and manage all bookings" actionLabel="Create Booking" onAction={() => setCreateOpen(true)} />
-        <SearchFilter value={search} onChange={setSearch} placeholder="Search by booking ID, service, or technician..." />
-        <div className="mb-4 flex gap-1 rounded-xl border border-border bg-muted p-1">
-          {tabs.map((tab) => (
-            <button key={tab} className="flex-1 rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground">{tab}</button>
-          ))}
-        </div>
-        <div className="rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Service</TableHead>
-                <TableHead>Technician</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="w-12"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><div className="h-4 w-20 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-4 w-32 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-4 w-24 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-4 w-20 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-5 w-16 animate-pulse rounded-full bg-muted" /></TableCell>
-                  <TableCell className="text-right"><div className="ml-auto h-4 w-14 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-4 w-4 animate-pulse rounded bg-muted" /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+      drafts[booking.id] || {
+        status: booking.status,
+        technicianId: booking.technicianId || null,
+      }
     );
   }
 
+  function setDraft(
+    booking: Booking,
+    changes: Partial<{
+      status: string;
+      technicianId: string | null;
+    }>,
+  ) {
+    const current = getDraft(booking);
+
+    setDrafts((existing) => ({
+      ...existing,
+      [booking.id]: {
+        ...current,
+        ...changes,
+      },
+    }));
+  }
+
+  function hasDraftChanges(booking: Booking) {
+    const draft = drafts[booking.id];
+    if (!draft) return false;
+
+    return (
+      draft.status !== booking.status ||
+      draft.technicianId !== (booking.technicianId || null)
+    );
+  }
+
+  async function loadBookings() {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await fetch("/api/admin/bookings", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to load bookings");
+      }
+
+      setBookings(Array.isArray(payload?.bookings) ? payload.bookings : []);
+      setDrafts({});
+    } catch (err) {
+      console.error("Failed to load admin bookings:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to load bookings",
+      );
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadTechnicians() {
+    try {
+      const response = await fetch("/api/admin/technicians", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to load technicians");
+      }
+
+      setTechnicians(
+        Array.isArray(payload?.technicians) ? payload.technicians : [],
+      );
+    } catch (err) {
+      console.error("Failed to load technicians:", err);
+      setTechnicians([]);
+    }
+  }
+
+  useEffect(() => {
+    void loadBookings();
+    void loadTechnicians();
+  }, []);
+
+  const filteredBookings = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return bookings.filter((booking) => {
+      if (
+        activeTab !== "All" &&
+        !(
+          (activeTab === "Pending" && booking.status === "pending") ||
+          (activeTab === "In Progress" && booking.status === "in_progress") ||
+          (activeTab === "Completed" && booking.status === "completed") ||
+          (activeTab === "Cancelled" && booking.status === "cancelled")
+        )
+      ) {
+        return false;
+      }
+
+      if (!query) return true;
+
+      const customer = getCustomer(booking);
+      const technician = booking.user_booking_technicianIdTouser;
+      const service = booking.service;
+       const selectedCustomer = selectedBooking
+    ? getCustomer(selectedBooking)
+    : null;
+
+      return (
+        booking.id.toLowerCase().includes(query) ||
+        (customer?.name || "").toLowerCase().includes(query) ||
+        (customer?.phone || "").toLowerCase().includes(query) ||
+        (technician?.name || "").toLowerCase().includes(query) ||
+        (service?.name || "").toLowerCase().includes(query)
+      );
+    });
+  }, [bookings, activeTab, search]);
+
+  async function updateBooking(
+    bookingId: string,
+    values: {
+      status?: string;
+      technicianId?: string | null;
+    },
+  ) {
+    try {
+      setUpdatingId(bookingId);
+      setError("");
+
+      const response = await fetch("/api/admin/bookings", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          bookingId,
+          ...values,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to update booking");
+      }
+
+      if (payload?.booking) {
+        setBookings((current) =>
+          current.map((booking) =>
+            booking.id === bookingId ? payload.booking : booking,
+          ),
+        );
+
+        setSelectedBooking((current) =>
+          current?.id === bookingId ? payload.booking : current,
+        );
+      } else {
+        await loadBookings();
+      }
+
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[bookingId];
+        return next;
+      });
+
+      setTechnicianOpenId(null);
+    } catch (err) {
+      console.error("Failed to update booking:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to update booking",
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function saveBookingChanges(booking: Booking) {
+    const draft = drafts[booking.id];
+    if (!draft || !hasDraftChanges(booking)) return;
+
+    /*
+     * IMPORTANT:
+     * A completed booking cannot be moved back to another status.
+     * The status control is locked for completed bookings below.
+     * We still allow technician assignment changes on a completed booking.
+     */
+    const values: {
+      status?: string;
+      technicianId?: string | null;
+    } = {
+      technicianId: draft.technicianId,
+    };
+
+    if (booking.status !== "completed") {
+      values.status = draft.status;
+    }
+
+    await updateBooking(booking.id, values);
+  }
+
+  function chooseTechnician(booking: Booking, technicianId: string | null) {
+    setDraft(booking, { technicianId });
+    setTechnicianOpenId(null);
+  }
+
+  function openDetails(booking: Booking) {
+    setSelectedBooking(booking);
+    setTechnicianOpenId(null);
+  }
+
+  function goToCreateBooking() {
+    window.location.href = "/admin/bookings/create";
+  }
+
   return (
-    <div>
-      <PageHeader title="Bookings" description="View and manage all bookings" actionLabel="Create Booking" onAction={() => setCreateOpen(true)} />
-      <SearchFilter value={search} onChange={setSearch} placeholder="Search by booking ID, service, or technician..." />
+    <main className="w-full max-w-none px-3 py-5 sm:px-5 lg:px-7 xl:px-9">
+      <div className="mx-auto w-full max-w-[1800px]">
+        {/* Header */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-[28px] font-bold tracking-tight text-slate-900">
+              Bookings
+            </h1>
+            <p className="mt-1.5 text-sm text-slate-500">
+              View and manage all bookings
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              Select a technician or change the status, then click Save to
+              update the booking.
+            </p>
+          </div>
 
-      {/* Tabs */}
-      <div className="mb-4 flex gap-1 rounded-xl border border-border bg-muted p-1">
-        {tabs.map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-              activeTab === tab ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-            }`}
+            type="button"
+            onClick={goToCreateBooking}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 sm:w-auto"
           >
-            {tab}
+            <span className="text-lg leading-none">+</span>
+            Create Booking
           </button>
-        ))}
-      </div>
+        </div>
 
-      <div className="rounded-xl border border-border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Service</TableHead>
-              <TableHead>Technician</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No bookings found.</TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((booking, i) => (
-                <motion.tr key={booking.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}>
-                  <TableCell className="font-medium">{booking.id}</TableCell>
-                  <TableCell>{booking.service.name}<br /><span className="text-xs text-muted-foreground">{booking.service.category}</span></TableCell>
-                  <TableCell>{booking.technician?.name || "Unassigned"}</TableCell>
-                  <TableCell>{new Date(booking.scheduledDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}<br /><span className="text-xs text-muted-foreground">{booking.scheduledTime}</span></TableCell>
-                  <TableCell><StatusBadge status={booking.status} /></TableCell>
-                  <TableCell className="text-right font-medium">₹{booking.totalAmount}</TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setViewBooking(booking)}><Eye className="mr-2 size-4" /> View</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setEditBooking(booking)}><Pencil className="mr-2 size-4" /> Reschedule</DropdownMenuItem>
-                        {booking.status !== "completed" && booking.status !== "cancelled" && (
-                          <DropdownMenuItem onClick={() => setCancelId(booking.id)} className="text-destructive"><XCircle className="mr-2 size-4" /> Cancel</DropdownMenuItem>
+        {/* Search */}
+        <div className="mb-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by booking ID, customer, service, or technician..."
+              className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 sm:flex sm:overflow-hidden">
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={[
+                "rounded-lg px-3 py-2.5 text-sm font-medium transition sm:flex-1",
+                activeTab === tab
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-900",
+              ].join(" ")}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {error && (
+          <div className="mb-5 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => setError("")}
+              className="shrink-0 text-red-500 hover:text-red-700"
+              aria-label="Close error"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex min-h-[300px] items-center justify-center rounded-2xl border border-slate-200 bg-white">
+            <div className="text-center">
+              <Loader2 className="mx-auto h-7 w-7 animate-spin text-blue-600" />
+              <p className="mt-3 text-sm text-slate-500">
+                Loading bookings...
+              </p>
+            </div>
+          </div>
+        ) : filteredBookings.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+              <Calendar className="h-7 w-7 text-slate-500" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-900">
+              No bookings found
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Try changing the search or status filter.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop / tablet table */}
+            <div className="hidden w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block">
+              <div className="w-full overflow-x-auto">
+                <table className="w-full min-w-[1250px] table-fixed border-collapse">
+                  <colgroup>
+                    <col className="w-[14%]" />
+                    <col className="w-[16%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[11%]" />
+                    <col className="w-[7%]" />
+                    <col className="w-[8%]" />
+                  </colgroup>
+
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/70">
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        ID
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Service
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Customer
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Technician
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Date & Time
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Status
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Amount
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Save
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {filteredBookings.map((booking) => {
+                      const customer =
+                        booking.user_booking_customerIdTouser;
+                      const draft = getDraft(booking);
+                      const draftTechnician = technicians.find(
+                        (item) => item.id === draft.technicianId,
+                      );
+                      const isUpdating = updatingId === booking.id;
+                      const hasChanges = hasDraftChanges(booking);
+                      const completed = booking.status === "completed";
+
+                      return (
+                        <tr
+                          key={booking.id}
+                          className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60"
+                        >
+                          <td className="px-4 py-4 align-middle">
+                            <button
+                              type="button"
+                              onClick={() => openDetails(booking)}
+                              title={booking.id}
+                              className="block max-w-full truncate text-left text-sm font-semibold text-slate-800 hover:text-blue-600"
+                            >
+                              {booking.id}
+                            </button>
+                          </td>
+
+                          <td className="px-4 py-4 align-middle">
+                            <button
+                              type="button"
+                              onClick={() => openDetails(booking)}
+                              className="block max-w-full text-left"
+                            >
+                              <p className="truncate text-sm font-semibold text-slate-900">
+                                {booking.service?.name || "Service"}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Home Service
+                              </p>
+                            </button>
+                          </td>
+
+                          <td className="px-4 py-4 align-middle">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">
+                                {customer?.name || "Unknown customer"}
+                              </p>
+                              {customer?.phone && (
+                                <p className="mt-1 truncate text-xs text-slate-500">
+                                  {customer.phone}
+                                </p>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="relative px-4 py-4 align-middle">
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() =>
+                                setTechnicianOpenId(
+                                  technicianOpenId === booking.id
+                                    ? null
+                                    : booking.id,
+                                )
+                              }
+                              className="inline-flex max-w-full items-center gap-1.5 text-sm text-slate-700 hover:text-blue-600 disabled:opacity-50"
+                            >
+                              <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                              <span className="truncate">
+                                {draftTechnician?.name || "Unassigned"}
+                              </span>
+                              <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                            </button>
+
+                            {technicianOpenId === booking.id && (
+                              <div className="absolute left-3 top-[68px] z-40 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    chooseTechnician(booking, null)
+                                  }
+                                  className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                                >
+                                  <span>Unassigned</span>
+                                  {!draft.technicianId && (
+                                    <Check className="h-4 w-4 text-blue-600" />
+                                  )}
+                                </button>
+
+                                {technicians.map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() =>
+                                      chooseTechnician(booking, item.id)
+                                    }
+                                    className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                                  >
+                                    <span className="truncate">
+                                      {item.name || "Technician"}
+                                    </span>
+                                    {draft.technicianId === item.id && (
+                                      <Check className="h-4 w-4 shrink-0 text-blue-600" />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-4 align-middle">
+                            <div className="text-sm font-medium text-slate-700">
+                              {formatDate(booking.scheduledDate)}
+                            </div>
+                            <div className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500">
+                              <Clock className="h-3 w-3" />
+                              {booking.scheduledTime}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-4 align-middle">
+                            <select
+                              value={draft.status}
+                              disabled={isUpdating || completed}
+                              onChange={(event) =>
+                                setDraft(booking, {
+                                  status: event.target.value,
+                                })
+                              }
+                              title={
+                                completed
+                                  ? "Completed bookings cannot be moved back to another status"
+                                  : "Change booking status"
+                              }
+                              className={[
+                                "w-full max-w-[145px] rounded-full border px-3 py-1.5 text-xs font-semibold outline-none",
+                                completed
+                                  ? "cursor-not-allowed opacity-80"
+                                  : "cursor-pointer",
+                                statusClass(draft.status),
+                              ].join(" ")}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="confirmed">Confirmed</option>
+                              <option value="in_progress">
+                                In Progress
+                              </option>
+                              <option value="completed">Completed</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
+                          </td>
+
+                          <td className="px-4 py-4 text-right align-middle">
+                            <span className="whitespace-nowrap text-sm font-bold text-slate-900">
+                              {money(booking.totalAmount)}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-4 text-center align-middle">
+                            <button
+                              type="button"
+                              disabled={isUpdating || !hasChanges}
+                              onClick={() => void saveBookingChanges(booking)}
+                              className="inline-flex min-w-[68px] items-center justify-center rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                            >
+                              {isUpdating ? "Saving..." : "Save"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="space-y-3 md:hidden">
+              {filteredBookings.map((booking) => {
+                const customer = booking.user_booking_customerIdTouser;
+                const draft = getDraft(booking);
+                const draftTechnician = technicians.find(
+                  (item) => item.id === draft.technicianId,
+                );
+                const isUpdating = updatingId === booking.id;
+                const hasChanges = hasDraftChanges(booking);
+                const completed = booking.status === "completed";
+
+                return (
+                  <div
+                    key={booking.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => openDetails(booking)}
+                        className="min-w-0 text-left"
+                      >
+                        <p className="truncate text-xs font-semibold text-slate-500">
+                          {booking.id}
+                        </p>
+                        <p className="mt-1 truncate text-base font-bold text-slate-900">
+                          {booking.service?.name || "Service"}
+                        </p>
+                      </button>
+
+                      <span
+                        className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                          booking.status,
+                        )}`}
+                      >
+                        {statusLabel(booking.status)}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs text-slate-400">Customer</p>
+                        <p className="mt-1 truncate font-semibold text-slate-800">
+                          {customer?.name || "Unknown customer"}
+                        </p>
+                        {customer?.phone && (
+                          <p className="truncate text-xs text-slate-500">
+                            {customer.phone}
+                          </p>
                         )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </motion.tr>
-              ))
-            )}
-          </TableBody>
-        </Table>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400">Amount</p>
+                        <p className="mt-1 font-bold text-slate-900">
+                          {money(booking.totalAmount)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400">Date & Time</p>
+                        <p className="mt-1 font-medium text-slate-700">
+                          {formatDate(booking.scheduledDate)}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {booking.scheduledTime}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-slate-400">Technician</p>
+                        <div className="relative mt-1">
+                          <button
+                            type="button"
+                            disabled={isUpdating}
+                            onClick={() =>
+                              setTechnicianOpenId(
+                                technicianOpenId === booking.id
+                                  ? null
+                                  : booking.id,
+                              )
+                            }
+                            className="inline-flex max-w-full items-center gap-1 text-left text-sm font-medium text-slate-700"
+                          >
+                            <UserRound className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                            <span className="truncate">
+                              {draftTechnician?.name || "Unassigned"}
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                          </button>
+
+                          {technicianOpenId === booking.id && (
+                            <div className="absolute left-0 top-8 z-40 w-56 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  chooseTechnician(booking, null)
+                                }
+                                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
+                              >
+                                Unassigned
+                                {!draft.technicianId && (
+                                  <Check className="h-4 w-4 text-blue-600" />
+                                )}
+                              </button>
+
+                              {technicians.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() =>
+                                    chooseTechnician(booking, item.id)
+                                  }
+                                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100"
+                                >
+                                  <span className="truncate">
+                                    {item.name || "Technician"}
+                                  </span>
+                                  {draft.technicianId === item.id && (
+                                    <Check className="h-4 w-4 text-blue-600" />
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <select
+                        value={draft.status}
+                        disabled={isUpdating || completed}
+                        onChange={(event) =>
+                          setDraft(booking, {
+                            status: event.target.value,
+                          })
+                        }
+                        className={[
+                          "h-10 rounded-lg border px-3 text-sm font-medium outline-none",
+                          completed
+                            ? "cursor-not-allowed opacity-80"
+                            : "cursor-pointer",
+                          statusClass(draft.status),
+                        ].join(" ")}
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        disabled={isUpdating || !hasChanges}
+                        onClick={() => void saveBookingChanges(booking)}
+                        className="h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                      >
+                        {isUpdating ? "Saving..." : "Save Changes"}
+                      </button>
+                    </div>
+
+                    {completed && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        Completed bookings cannot be moved back to another
+                        status.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* Details modal */}
+        {selectedBooking && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) {
+                setSelectedBooking(null);
+              }
+            }}
+          >
+            <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Booking details
+                  </p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-900">
+                    {selectedBooking.service?.name || "Service"}
+                  </h2>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedBooking(null)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  aria-label="Close details"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="grid gap-5 p-5 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-slate-400">Booking ID</p>
+                  <p className="mt-1 break-all text-sm font-semibold text-slate-800">
+                    {selectedBooking.id}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400">Amount</p>
+                  <p className="mt-1 text-lg font-bold text-slate-900">
+                    {money(selectedBooking.totalAmount)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400">Customer</p>
+                  <p className="mt-1 font-semibold text-slate-800">
+                    {selectedBooking.user_booking_customerIdTouser?.name || "Unknown customer"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {selectedBooking.user_booking_customerIdTouser?.phone || "No phone"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400">Technician</p>
+                  <p className="mt-1 font-semibold text-slate-800">
+                    {selectedBooking.user_booking_technicianIdTouser?.name || "Unassigned"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {selectedBooking.user_booking_technicianIdTouser?.phone || "No phone"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400">Date</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">
+                    {formatDate(selectedBooking.scheduledDate)}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-400">Time</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">
+                    {selectedBooking.scheduledTime}
+                  </p>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <p className="text-xs text-slate-400">Address</p>
+                  <p className="mt-1 text-sm text-slate-700">
+                    {selectedBooking.address || "No address provided"}
+                  </p>
+                </div>
+
+                {selectedBooking.notes && (
+                  <div className="sm:col-span-2">
+                    <p className="text-xs text-slate-400">Notes</p>
+                    <p className="mt-1 text-sm text-slate-700">
+                      {selectedBooking.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end border-t border-slate-200 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedBooking(null)}
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* View Dialog */}
-      <Dialog open={!!viewBooking} onOpenChange={() => setViewBooking(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Booking Details</DialogTitle></DialogHeader>
-          {viewBooking && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <div><span className="text-muted-foreground">ID:</span> {viewBooking.id}</div>
-                <div><span className="text-muted-foreground">Status:</span> <StatusBadge status={viewBooking.status} /></div>
-                <div><span className="text-muted-foreground">Service:</span> {viewBooking.service.name}</div>
-                <div><span className="text-muted-foreground">Category:</span> {viewBooking.service.category}</div>
-                <div><span className="text-muted-foreground">Technician:</span> {viewBooking.technician?.name || "Unassigned"}</div>
-                <div><span className="text-muted-foreground">Amount:</span> ₹{viewBooking.totalAmount}</div>
-                <div><span className="text-muted-foreground">Date:</span> {viewBooking.scheduledDate}</div>
-                <div><span className="text-muted-foreground">Time:</span> {viewBooking.scheduledTime}</div>
-              </div>
-              {viewBooking.notes && <div><span className="text-muted-foreground">Notes:</span> {viewBooking.notes}</div>}
-              <div><span className="text-muted-foreground">Customer:</span> {viewBooking.customer.name} ({viewBooking.customer.phone})</div>
-              <div><span className="text-muted-foreground">Payment:</span> <StatusBadge status={viewBooking.paymentStatus} /></div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Create Booking</DialogTitle></DialogHeader>
-          <form onSubmit={handleCreate} className="space-y-4">
-            <div>
-              <Label>Customer</Label>
-              <Select name="customer">
-                <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-                <SelectContent>
-                  {customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name || c.phone}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Service</Label>
-              <Select name="service">
-                <SelectTrigger><SelectValue placeholder="Select service" /></SelectTrigger>
-                <SelectContent>
-                  {services.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Technician</Label>
-              <Select name="technician">
-                <SelectTrigger><SelectValue placeholder="Select technician (optional)" /></SelectTrigger>
-                <SelectContent>
-                  {technicians.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name || t.phone}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div><Label>Date</Label><Input name="date" type="date" required /></div>
-              <div><Label>Time</Label><Input name="time" placeholder="e.g. 10:00 AM" required /></div>
-            </div>
-            <div><Label>Address</Label><Input name="address" required /></div>
-            <div><Label>Amount (₹)</Label><Input name="amount" type="number" required /></div>
-            <div><Label>Notes</Label><Input name="notes" placeholder="Optional notes" /></div>
-            <Button type="submit" className="w-full"><CalendarPlus className="mr-1 size-4" /> Create Booking</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit/Reschedule Dialog */}
-      <Dialog open={!!editBooking} onOpenChange={() => setEditBooking(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Reschedule Booking</DialogTitle></DialogHeader>
-          {editBooking && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border p-3 text-sm">
-                <p className="font-medium">{editBooking.id} - {editBooking.service.name}</p>
-                <p className="text-muted-foreground">Current: {editBooking.scheduledDate} at {editBooking.scheduledTime}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label>New Date</Label><Input type="date" defaultValue={editBooking.scheduledDate} onChange={(e) => setEditBooking({ ...editBooking, scheduledDate: e.target.value })} /></div>
-                <div><Label>New Time</Label><Input defaultValue={editBooking.scheduledTime} onChange={(e) => setEditBooking({ ...editBooking, scheduledTime: e.target.value })} /></div>
-              </div>
-              <Button onClick={handleReschedule} className="w-full">Save Changes</Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <ConfirmDialog open={!!cancelId} onOpenChange={() => setCancelId(null)} title="Cancel Booking" description="Are you sure you want to cancel this booking?" onConfirm={handleCancel} confirmLabel="Cancel Booking" />
-    </div>
+    </main>
   );
 }

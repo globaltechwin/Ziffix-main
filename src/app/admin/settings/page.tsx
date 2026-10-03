@@ -30,7 +30,7 @@ export default function AdminSettingsPage() {
           <form onSubmit={(e) => { e.preventDefault(); toast.success("Profile updated"); }} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Name</Label><Input defaultValue="Admin User" /></div>
-              <div><Label>Email</Label><Input type="email" defaultValue="admin@servly.in" /></div>
+              <div><Label>Email</Label><Input type="email" defaultValue="admin@ziffix.com" /></div>
             </div>
             <div><Label>Phone</Label><Input defaultValue="+91 98765 43210" /></div>
             <div><Label>Current Password</Label><Input type="password" placeholder="Enter current password" /></div>

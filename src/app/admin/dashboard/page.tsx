@@ -92,9 +92,9 @@ export default function AdminDashboardPage() {
 
   const statCards = [
     { label: "Total Customers", value: data.totalCustomers ?? 0, icon: Users, color: "text-blue-600 bg-blue-50", change: `+${data.newCustomersThisMonth ?? 0} this month` },
-    { label: "Active Bookings", value: data.activeBookings ?? 0, icon: CalendarCheck, color: "text-green-600 bg-green-50", change: `${data.completedThisMonth ?? 0} completed` },
+    { label: "Available Bookings", value: data.activeBookings ?? 0, icon: CalendarCheck, color: "text-green-600 bg-green-50", change: `${data.completedThisMonth ?? 0} completed` },
     { label: "Total Revenue", value: `₹${(data.totalRevenue ?? 0).toLocaleString("en-IN")}`, icon: IndianRupee, color: "text-purple-600 bg-purple-50", change: `${data.pendingPayments ?? 0} pending` },
-    { label: "Active Technicians", value: data.totalTechnicians ?? 0, icon: Wrench, color: "text-amber-600 bg-amber-50", change: `Avg rating ${data.avgRating ?? 0}` },
+    { label: "Available Technicians", value: data.totalTechnicians ?? 0, icon: Wrench, color: "text-amber-600 bg-amber-50", change: `Avg rating ${data.avgRating ?? 0}` },
   ];
 
   return (

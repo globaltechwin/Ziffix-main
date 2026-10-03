@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { MoreHorizontal, Eye, Pencil, Star, Briefcase } from "lucide-react";
+import { MoreHorizontal, Eye, Pencil, Star, Briefcase, CalendarDays } from "lucide-react";
 import { PageHeader } from "@/components/admin/shared/PageHeader";
 import { SearchFilter } from "@/components/admin/shared/SearchFilter";
 import { StatusBadge } from "@/components/admin/shared/StatusBadge";
@@ -15,296 +15,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 
-interface ApiTechnician {
-  id: string;
-  phone: string;
-  name: string;
-  role: string;
-  createdAt: string;
-  technicianProfile: {
-    specialties: string[];
-    rating: number;
-    totalJobs: number;
-    status: string;
-    certifications: string[];
-  } | null;
-}
+type Tech={id:string;phone:string;name:string;role:string;createdAt:string;technicianProfile:{specialties:string[];rating:number;totalJobs:number;status:string;certifications:string[];availability:{dayOfWeek:number;isAvailable:boolean;startTime:string|null;endTime:string|null}[]}|null};
+type Booking={id:string;status:string;service:{name:string};customer?:{name:string|null};technician?:{name:string|null}|null};
+const days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
-export default function AdminTechniciansPage() {
-  const [data, setData] = useState<ApiTechnician[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [viewTech, setViewTech] = useState<ApiTechnician | null>(null);
-  const [editTech, setEditTech] = useState<ApiTechnician | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignTech, setAssignTech] = useState<ApiTechnician | null>(null);
-
-  const fetchTechnicians = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/technicians");
-      const json = await res.json();
-      setData(json.technicians);
-    } catch {
-      toast.error("Failed to load technicians");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTechnicians();
-  }, []);
-
-  const getSpecialties = (t: ApiTechnician) => t.technicianProfile?.specialties ?? [];
-  const getRating = (t: ApiTechnician) => t.technicianProfile?.rating ?? 0;
-  const getTotalJobs = (t: ApiTechnician) => t.technicianProfile?.totalJobs ?? 0;
-  const getStatus = (t: ApiTechnician) => t.technicianProfile?.status ?? "offline";
-  const getCertifications = (t: ApiTechnician) => t.technicianProfile?.certifications ?? [];
-
-  const filtered = data.filter((t) => {
-    const q = search.toLowerCase();
-    const matchesSearch = t.name.toLowerCase().includes(q) || getSpecialties(t).some((s) => s.toLowerCase().includes(q));
-    const matchesStatus = statusFilter === "all" || getStatus(t) === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    try {
-      const res = await fetch("/api/admin/technicians", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: fd.get("phone"),
-          password: fd.get("password"),
-          name: fd.get("name"),
-          specialties: (fd.get("specialties") as string).split(",").map((s) => s.trim()),
-        }),
-      });
-      if (!res.ok) throw new Error();
-      setAddOpen(false);
-      toast.success("Technician added successfully");
-      fetchTechnicians();
-    } catch {
-      toast.error("Failed to add technician");
-    }
-  };
-
-  const handleEdit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!editTech) return;
-    const fd = new FormData(e.currentTarget);
-    try {
-      const res = await fetch("/api/admin/technicians", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: editTech.id,
-          name: fd.get("name"),
-          phone: fd.get("phone"),
-          specialties: (fd.get("specialties") as string).split(",").map((s) => s.trim()),
-        }),
-      });
-      if (!res.ok) throw new Error();
-      setEditTech(null);
-      toast.success("Technician updated successfully");
-      fetchTechnicians();
-    } catch {
-      toast.error("Failed to update technician");
-    }
-  };
-
-  if (loading) {
-    return (
-      <div>
-        <PageHeader title="Technicians" description="Manage your technician workforce" actionLabel="Add Technician" onAction={() => setAddOpen(true)} />
-        <div className="rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Specialties</TableHead>
-                <TableHead>Rating</TableHead>
-                <TableHead className="text-right">Jobs</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-12"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell><div className="h-4 w-32 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-4 w-40 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-4 w-12 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell className="text-right"><div className="ml-auto h-4 w-8 animate-pulse rounded bg-muted" /></TableCell>
-                  <TableCell><div className="h-5 w-16 animate-pulse rounded-full bg-muted" /></TableCell>
-                  <TableCell></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <PageHeader title="Technicians" description="Manage your technician workforce" actionLabel="Add Technician" onAction={() => setAddOpen(true)} />
-
-      <div className="mb-4 flex gap-3">
-        <div className="flex-1">
-          <SearchFilter value={search} onChange={setSearch} placeholder="Search by name or specialty..." />
-        </div>
-        <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="available">Available</SelectItem>
-            <SelectItem value="busy">Busy</SelectItem>
-            <SelectItem value="offline">Offline</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Specialties</TableHead>
-              <TableHead>Rating</TableHead>
-              <TableHead className="text-right">Jobs</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No technicians found.</TableCell></TableRow>
-            ) : (
-              filtered.map((tech, i) => {
-                const specialties = getSpecialties(tech);
-                return (
-                  <motion.tr key={tech.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}>
-                    <TableCell className="font-medium">{tech.name}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {specialties.slice(0, 2).map((s) => (
-                          <span key={s} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{s}</span>
-                        ))}
-                        {specialties.length > 2 && <span className="text-xs text-muted-foreground">+{specialties.length - 2}</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="flex items-center gap-1 text-sm">
-                        <Star className="size-3.5 fill-amber-400 text-amber-400" />
-                        {getRating(tech)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">{getTotalJobs(tech)}</TableCell>
-                    <TableCell><StatusBadge status={getStatus(tech)} /></TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4" /></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setViewTech(tech)}><Eye className="mr-2 size-4" /> View Profile</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setEditTech(tech)}><Pencil className="mr-2 size-4" /> Edit</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { setAssignTech(tech); setAssignOpen(true); }}><Briefcase className="mr-2 size-4" /> Assign Job</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </motion.tr>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <Dialog open={!!viewTech} onOpenChange={() => setViewTech(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Technician Profile</DialogTitle></DialogHeader>
-          {viewTech && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <div><span className="text-muted-foreground">Name:</span> {viewTech.name}</div>
-                <div><span className="text-muted-foreground">Status:</span> <StatusBadge status={getStatus(viewTech)} /></div>
-                <div><span className="text-muted-foreground">Phone:</span> {viewTech.phone}</div>
-                <div><span className="text-muted-foreground">Rating:</span> <Star className="inline size-3.5 fill-amber-400 text-amber-400" /> {getRating(viewTech)}</div>
-                <div><span className="text-muted-foreground">Total Jobs:</span> {getTotalJobs(viewTech)}</div>
-                <div><span className="text-muted-foreground">Joined:</span> {new Date(viewTech.createdAt).toLocaleDateString("en-IN")}</div>
-              </div>
-              <div>
-                <p className="mb-1 font-medium">Specialties</p>
-                <div className="flex flex-wrap gap-1">
-                  {getSpecialties(viewTech).map((s) => <span key={s} className="rounded-full bg-muted px-2 py-0.5 text-xs">{s}</span>)}
-                </div>
-              </div>
-              {getCertifications(viewTech).length > 0 && (
-                <div>
-                  <p className="mb-1 font-medium">Certifications</p>
-                  <div className="flex flex-wrap gap-1">
-                    {getCertifications(viewTech).map((c) => <span key={c} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">{c}</span>)}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add Technician</DialogTitle></DialogHeader>
-          <form onSubmit={handleAdd} className="space-y-4">
-            <div><Label>Name</Label><Input name="name" required /></div>
-            <div><Label>Phone</Label><Input name="phone" required /></div>
-            <div><Label>Password</Label><Input name="password" type="password" required /></div>
-            <div><Label>Specialties (comma separated)</Label><Input name="specialties" placeholder="e.g. Plumbing, Electrical" required /></div>
-            <Button type="submit" className="w-full">Add Technician</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!editTech} onOpenChange={() => setEditTech(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Edit Technician</DialogTitle></DialogHeader>
-          {editTech && (
-            <form onSubmit={handleEdit} className="space-y-4">
-              <div><Label>Name</Label><Input name="name" defaultValue={editTech.name} required /></div>
-              <div><Label>Phone</Label><Input name="phone" defaultValue={editTech.phone} required /></div>
-              <div><Label>Specialties (comma separated)</Label><Input name="specialties" defaultValue={getSpecialties(editTech).join(", ")} required /></div>
-              <Button type="submit" className="w-full">Save Changes</Button>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Assign Job</DialogTitle></DialogHeader>
-          {assignTech && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-border p-3 text-sm">
-                <p className="font-medium">{assignTech.name}</p>
-                <p className="text-muted-foreground">Specialties: {getSpecialties(assignTech).join(", ")}</p>
-              </div>
-              <div><Label>Select Booking</Label><Select><SelectTrigger><SelectValue placeholder="Choose a pending booking" /></SelectTrigger><SelectContent>
-                <SelectItem value="BK-1028">BK-1028 - Washroom Cleaning</SelectItem>
-                <SelectItem value="BK-1033">BK-1033 - Car Wash</SelectItem>
-              </SelectContent></Select></div>
-              <Button onClick={() => { setAssignOpen(false); toast.success(`Job assigned to ${assignTech.name}`); }} className="w-full">Assign Job</Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
+export default function AdminTechniciansPage(){
+ const[data,setData]=useState<Tech[]>([]),[bookings,setBookings]=useState<Booking[]>([]),[loading,setLoading]=useState(true),[search,setSearch]=useState(""),[statusFilter,setStatusFilter]=useState("all"),[view,setView]=useState<Tech|null>(null),[edit,setEdit]=useState<Tech|null>(null),[add,setAdd]=useState(false),[assign,setAssign]=useState<Tech|null>(null),[selectedBooking,setSelectedBooking]=useState(""),[saving,setSaving]=useState(false);
+ const load=async()=>{setLoading(true);try{const[r1,r2]=await Promise.all([fetch("/api/admin/technicians",{cache:"no-store"}),fetch("/api/admin/bookings",{cache:"no-store"})]);const a=await r1.json(),b=await r2.json();if(!r1.ok)throw new Error(a.error);setData(a.technicians||[]);setBookings(b.bookings||[])}catch(e){toast.error(e instanceof Error?e.message:"Failed to load technicians")}finally{setLoading(false)}};
+ useEffect(()=>{void load()},[]);
+ const sp=(t:Tech)=>t.technicianProfile?.specialties||[];const st=(t:Tech)=>t.technicianProfile?.status||"offline";
+ const filtered=data.filter(t=>{const q=search.toLowerCase();return(t.name.toLowerCase().includes(q)||sp(t).some(x=>x.toLowerCase().includes(q)))&&(statusFilter==="all"||st(t)===statusFilter)});
+ const addTech=async(e:React.FormEvent<HTMLFormElement>)=>{e.preventDefault();setSaving(true);const fd=new FormData(e.currentTarget);try{const r=await fetch("/api/admin/technicians",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:fd.get("name"),phone:fd.get("phone"),password:fd.get("password"),specialties:String(fd.get("specialties")||"").split(",")})});const j=await r.json();if(!r.ok)throw new Error(j.error);setAdd(false);e.currentTarget.reset();toast.success("Technician created successfully");await load()}catch(e){toast.error(e instanceof Error?e.message:"Failed to create technician")}finally{setSaving(false)}};
+ const editTech=async(e:React.FormEvent<HTMLFormElement>)=>{e.preventDefault();if(!edit)return;setSaving(true);const fd=new FormData(e.currentTarget);try{const r=await fetch("/api/admin/technicians",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:edit.id,name:fd.get("name"),phone:fd.get("phone"),specialties:String(fd.get("specialties")||"").split(",")})});const j=await r.json();if(!r.ok)throw new Error(j.error);setEdit(null);toast.success("Technician updated");await load()}catch(e){toast.error(e instanceof Error?e.message:"Failed to update technician")}finally{setSaving(false)}};
+ const changeStatus=async(t:Tech,status:string)=>{try{const r=await fetch("/api/admin/technicians",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:t.id,status})});const j=await r.json();if(!r.ok)throw new Error(j.error);toast.success(`${t.name} is ${status}`);await load();if(view?.id===t.id)setView(null)}catch(e){toast.error(e instanceof Error?e.message:"Failed to update status")}};
+ const assignJob=async()=>{if(!assign||!selectedBooking)return;setSaving(true);try{const r=await fetch("/api/admin/bookings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({bookingId:selectedBooking,technicianId:assign.id,status:"confirmed"})});const j=await r.json();if(!r.ok)throw new Error(j.error);setAssign(null);setSelectedBooking("");toast.success(`Job assigned to ${assign.name}`);await load()}catch(e){toast.error(e instanceof Error?e.message:"Failed to assign job")}finally{setSaving(false)}};
+ if(loading)return <div className="space-y-4"><PageHeader title="Technicians" description="Manage your technician workforce" actionLabel="Add Technician" onAction={()=>setAdd(true)}/><div className="h-64 animate-pulse rounded-xl bg-muted"/></div>;
+ const pending=bookings.filter(b=>["pending","confirmed"].includes(b.status)&&!b.technician);
+ return <div><PageHeader title="Technicians" description="Manage your technician workforce" actionLabel="Add Technician" onAction={()=>setAdd(true)}/><div className="mb-4 flex gap-3"><div className="flex-1"><SearchFilter value={search} onChange={setSearch} placeholder="Search by name or specialty..."/></div><Select value={statusFilter} onValueChange={v=>v&&setStatusFilter(v)}><SelectTrigger className="w-40"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All Status</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="busy">Busy</SelectItem><SelectItem value="offline">Offline</SelectItem></SelectContent></Select></div><div className="rounded-xl border border-border bg-card"><Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Specialties</TableHead><TableHead>Rating</TableHead><TableHead className="text-right">Jobs</TableHead><TableHead>Status</TableHead><TableHead/></TableRow></TableHeader><TableBody>{filtered.length===0?<TableRow><TableCell colSpan={6} className="h-24 text-center text-muted-foreground">No technicians found.</TableCell></TableRow>:filtered.map((t,i)=><motion.tr key={t.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*.02}}><TableCell className="font-medium">{t.name}</TableCell><TableCell><div className="flex flex-wrap gap-1">{sp(t).slice(0,2).map(x=><span key={x} className="rounded-full bg-muted px-2 py-0.5 text-xs">{x}</span>)}</div></TableCell><TableCell><span className="flex items-center gap-1"><Star className="size-3.5 fill-amber-400 text-amber-400"/>{t.technicianProfile?.rating??0}</span></TableCell><TableCell className="text-right">{t.technicianProfile?.totalJobs??0}</TableCell><TableCell><StatusBadge status={st(t)}/></TableCell><TableCell><DropdownMenu><DropdownMenuTrigger className="rounded-md p-1 text-muted-foreground hover:text-foreground"><MoreHorizontal className="size-4"/></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={()=>setView(t)}><Eye className="mr-2 size-4"/>View Profile</DropdownMenuItem><DropdownMenuItem onClick={()=>setEdit(t)}><Pencil className="mr-2 size-4"/>Edit</DropdownMenuItem><DropdownMenuItem onClick={()=>setAssign(t)}><Briefcase className="mr-2 size-4"/>Assign Job</DropdownMenuItem></DropdownMenuContent></DropdownMenu></TableCell></motion.tr>)}</TableBody></Table></div>
+ <Dialog open={!!view} onOpenChange={()=>setView(null)}><DialogContent><DialogHeader><DialogTitle>Technician Profile</DialogTitle></DialogHeader>{view&&<div className="space-y-5 text-sm"><div className="grid grid-cols-2 gap-3"><div><span className="text-muted-foreground">Name:</span> {view.name}</div><div><span className="text-muted-foreground">Phone:</span> {view.phone}</div><div><span className="text-muted-foreground">Rating:</span> {view.technicianProfile?.rating??0}</div><div><span className="text-muted-foreground">Jobs:</span> {view.technicianProfile?.totalJobs??0}</div><div><span className="text-muted-foreground">Status:</span> <StatusBadge status={st(view)}/></div></div><div><p className="mb-2 font-medium">Change Status</p><div className="flex flex-wrap gap-2">{["available","busy","offline"].map(s=><Button key={s} size="sm" variant={st(view)===s?"default":"outline"} onClick={()=>void changeStatus(view,s)}>{s}</Button>)}</div></div><div><p className="mb-2 flex items-center gap-2 font-medium"><CalendarDays className="size-4"/>Weekly Schedule</p><div className="space-y-1">{days.map((day,i)=>{const a=view.technicianProfile?.availability.find(x=>x.dayOfWeek===i);return <div key={day} className="flex justify-between rounded-md border px-3 py-2"><span>{day}</span><span className="text-muted-foreground">{a?.isAvailable?`${a.startTime} - ${a.endTime}`:"Day off"}</span></div>})}</div></div></div>}</DialogContent></Dialog>
+ <Dialog open={add} onOpenChange={setAdd}><DialogContent><DialogHeader><DialogTitle>Add Technician</DialogTitle></DialogHeader><form onSubmit={addTech} className="space-y-4"><div><Label>Name</Label><Input name="name" required/></div><div><Label>Phone</Label><Input name="phone" required/></div><div><Label>Password</Label><Input name="password" type="password" minLength={6} required/></div><div><Label>Specialties</Label><Input name="specialties" placeholder="Home Cleaning, AC Service" required/></div><Button className="w-full" disabled={saving}>{saving?"Creating...":"Create Technician"}</Button></form></DialogContent></Dialog>
+ <Dialog open={!!edit} onOpenChange={()=>setEdit(null)}><DialogContent><DialogHeader><DialogTitle>Edit Technician</DialogTitle></DialogHeader>{edit&&<form onSubmit={editTech} className="space-y-4"><div><Label>Name</Label><Input name="name" defaultValue={edit.name} required/></div><div><Label>Phone</Label><Input name="phone" defaultValue={edit.phone} required/></div><div><Label>Specialties</Label><Input name="specialties" defaultValue={sp(edit).join(", ")} required/></div><Button className="w-full" disabled={saving}>{saving?"Saving...":"Save Changes"}</Button></form>}</DialogContent></Dialog>
+ <Dialog open={!!assign} onOpenChange={()=>setAssign(null)}><DialogContent><DialogHeader><DialogTitle>Assign Job</DialogTitle></DialogHeader>{assign&&<div className="space-y-4"><div className="rounded-lg border p-3"><p className="font-medium">{assign.name}</p><p className="text-sm text-muted-foreground">{sp(assign).join(", ")}</p></div>
+ <Select
+  value={selectedBooking}
+  onValueChange={(value) => setSelectedBooking(value ?? "")}><SelectTrigger><SelectValue placeholder="Choose an unassigned booking"/></SelectTrigger><SelectContent>{pending.length===0?<SelectItem value="none" disabled>No unassigned bookings</SelectItem>:pending.map(b=><SelectItem key={b.id} value={b.id}>{b.id} - {b.service?.name} - {b.customer?.name||"Customer"}</SelectItem>)}</SelectContent></Select><Button className="w-full" disabled={!selectedBooking||selectedBooking==="none"||saving} onClick={()=>void assignJob()}>{saving?"Assigning...":"Assign Job"}</Button></div>}</DialogContent></Dialog>
+ </div>;
 }

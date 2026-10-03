@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import { serviceDetails } from "@/data/serviceDetails";
 
-const STORAGE_KEY = "servly-service-status";
+const STORAGE_KEY = "ziffix-service-status";
 
 interface ServiceContextType {
   serviceStatus: Record<string, boolean>;
@@ -22,12 +22,17 @@ export function ServiceProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setServiceStatus(JSON.parse(stored));
-    } catch {}
-    setHydrated(true);
-  }, []);
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+
+    if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setServiceStatus(JSON.parse(stored));
+    }
+  } catch {}
+
+  setHydrated(true);
+}, []);
 
   useEffect(() => {
     if (hydrated) {

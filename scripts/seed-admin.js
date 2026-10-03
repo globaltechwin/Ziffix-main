@@ -1,3 +1,8 @@
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+require("dotenv/config");
+
+
 const bcrypt = require("bcryptjs");
 
 async function main() {

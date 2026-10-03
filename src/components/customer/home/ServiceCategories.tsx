@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import Link from "next/link";
+
 import {
   Shirt,
   Car,
@@ -14,6 +15,7 @@ import {
   Grid3X3,
   LayoutGrid,
   Loader2,
+  ArrowRight,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,7 +32,10 @@ interface Category {
   href: string;
 }
 
-const categoryMeta: Record<string, { icon: LucideIcon; color: string }> = {
+const categoryMeta: Record<
+  string,
+  { icon: LucideIcon; color: string }
+> = {
   Laundry: { icon: Shirt, color: "#8b5cf6" },
   "Car Wash": { icon: Car, color: "#3b82f6" },
   Cleaning: { icon: Home, color: "#22c55e" },
@@ -50,20 +55,29 @@ export function ServiceCategories() {
       .then((data) => {
         const services: Service[] = data.services || [];
         const counts: Record<string, number> = {};
-        services.forEach((s) => {
-          counts[s.category] = (counts[s.category] || 0) + 1;
+
+        services.forEach((service) => {
+          counts[service.category] =
+            (counts[service.category] || 0) + 1;
         });
 
-        const cats: Category[] = Object.entries(counts).map(([name, count]) => {
-          const meta = categoryMeta[name] || { icon: Grid3X3, color: "#6366f1" };
-          return {
-            name,
-            icon: meta.icon,
-            color: meta.color,
-            count,
-            href: "/customer/services",
-          };
-        });
+        const cats: Category[] = Object.entries(counts).map(
+          ([name, count]) => {
+            const meta =
+              categoryMeta[name] || {
+                icon: Grid3X3,
+                color: "#6366f1",
+              };
+
+            return {
+              name,
+              icon: meta.icon,
+              color: meta.color,
+              count,
+              href: "/customer/services",
+            };
+          }
+        );
 
         cats.push({
           name: "All Services",
@@ -81,8 +95,8 @@ export function ServiceCategories() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="size-6 animate-spin text-primary" />
       </div>
     );
   }
@@ -91,29 +105,57 @@ export function ServiceCategories() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-foreground">
-        Browse by Category
-      </h2>
-      <div className="grid grid-cols-4 gap-1">
-        {categories.map((cat) => {
-          const Icon = cat.icon;
+      <div className="mb-5 flex items-end justify-between">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">
+            Browse by Category
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Find the service you need
+          </p>
+        </div>
+
+        <Link
+          href="/customer/services"
+          className="hidden items-center gap-1 text-sm font-semibold text-primary sm:flex"
+        >
+          All services
+          <ArrowRight className="size-4" />
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+        {categories.map((category) => {
+          const Icon = category.icon;
+
           return (
-            <motion.div key={cat.name} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <motion.div
+              key={category.name}
+              whileHover={{ y: -3 }}
+              whileTap={{ scale: 0.98 }}
+            >
               <Link
-                href={cat.href}
-                className="flex flex-col items-center gap-2 rounded-xl p-3 transition-colors hover:bg-muted"
+                href={category.href}
+                className="group flex h-full flex-col items-center rounded-2xl border bg-background p-5 text-center shadow-sm transition hover:border-primary/30 hover:shadow-md"
               >
                 <div
-                  className="flex size-12 items-center justify-center rounded-full"
-                  style={{ backgroundColor: `${cat.color}15` }}
+                  className="mb-3 flex size-14 items-center justify-center rounded-2xl transition-transform group-hover:scale-105"
+                  style={{
+                    backgroundColor: `${category.color}15`,
+                  }}
                 >
-                  <Icon className="size-5" style={{ color: cat.color }} />
+                  <Icon
+                    className="size-6"
+                    style={{ color: category.color }}
+                  />
                 </div>
-                <span className="text-xs font-medium text-foreground">
-                  {cat.name}
+
+                <span className="text-sm font-semibold">
+                  {category.name}
                 </span>
-                <span className="text-[10px] text-muted-foreground">
-                  {cat.count} services
+
+                <span className="mt-1 text-xs text-muted-foreground">
+                  {category.count} services
                 </span>
               </Link>
             </motion.div>

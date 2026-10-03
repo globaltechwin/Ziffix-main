@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Tag } from "lucide-react";
 
 const offers = [
   {

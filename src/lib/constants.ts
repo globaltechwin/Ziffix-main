@@ -89,7 +89,6 @@ export const technicianNavItems: NavItem[] = [
   { title: "Earnings", href: "/technician/earnings", icon: "DollarSign" },
   { title: "Availability", href: "/technician/availability", icon: "Clock" },
   { title: "Notifications", href: "/technician/notifications", icon: "Bell" },
-  { title: "Referrals", href: "/technician/referrals", icon: "Gift" },
   { title: "Profile", href: "/technician/profile", icon: "User" },
   { title: "Settings", href: "/technician/settings", icon: "Settings" },
 ];
@@ -118,7 +117,6 @@ export const pageTitles: Record<string, string> = {
   "/technician/earnings": "Earnings",
   "/technician/availability": "Availability",
   "/technician/notifications": "Notifications",
-  "/technician/referrals": "Referrals",
   "/technician/profile": "Profile",
   "/technician/settings": "Settings",
 };

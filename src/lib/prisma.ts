@@ -1,42 +1,79 @@
+import "dotenv/config";
+
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "@prisma/client";
 
-const globalForPrisma = globalThis as unknown as { prisma: any };
+const databaseUrl = process.env.DATABASE_URL;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _prisma: any = null;
+if (!databaseUrl) {
+  throw new Error(
+    "DATABASE_URL is not defined. Please check C:\\projects\\Ziffix\\.env"
+  );
+}
 
-function createPrismaClient() {
-  const url = new URL(process.env.DATABASE_URL!);
+const url = new URL(databaseUrl);
 
-  const adapter = new PrismaMariaDb({
-    host: url.hostname,
-    port: Number(url.port),
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: url.pathname.slice(1),
+const configuredHost = url.hostname || "localhost";
+
+// On Windows, `localhost` can resolve to IPv6 (::1).
+// MySQL is confirmed working through IPv4 127.0.0.1,
+// so use IPv4 explicitly for local development.
+const host =
+  configuredHost === "localhost" || configuredHost === "::1"
+    ? "127.0.0.1"
+    : configuredHost;
+
+const port = Number(url.port || 3306);
+const user = decodeURIComponent(url.username);
+const password = decodeURIComponent(url.password);
+const database = decodeURIComponent(
+  url.pathname.replace(/^\/+/, "")
+);
+
+if (!database) {
+  throw new Error(
+    "DATABASE_URL does not contain a database name."
+  );
+}
+
+type PrismaGlobal = {
+  prisma?: PrismaClient;
+  adapter?: PrismaMariaDb;
+};
+
+const globalForPrisma = globalThis as unknown as PrismaGlobal;
+
+const adapter =
+  globalForPrisma.adapter ??
+  new PrismaMariaDb({
+    host,
+    port,
+    user,
+    password,
+    database,
+
+    // One shared application pool.
     connectionLimit: 5,
+
+    // Connection establishment timeout.
+    connectTimeout: 10_000,
+
+    // Maximum time waiting for a pool connection.
+    acquireTimeout: 30_000,
+
+    // Keep genuinely idle connections available.
+    idleTimeout: 300,
   });
 
-  return new PrismaClient({ adapter });
+const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    adapter,
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.adapter = adapter;
+  globalForPrisma.prisma = prisma;
 }
 
-function getPrisma(): any {
-  if (process.env.NODE_ENV === "production") {
-    if (!_prisma) _prisma = createPrismaClient();
-    return _prisma;
-  }
-
-  if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = createPrismaClient();
-  }
-
-  return globalForPrisma.prisma;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const prisma: any = new Proxy({} as any, {
-  get(_, prop) {
-    return (getPrisma() as any)[prop as string];
-  },
-});
+export { prisma };

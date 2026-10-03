@@ -41,6 +41,7 @@ export default function CustomerSettingsPage() {
 
   const phone = user?.phone || "";
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   const handleNotificationToggle = (key: keyof typeof notifications) => {
@@ -154,7 +155,7 @@ export default function CustomerSettingsPage() {
                   Promotions
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Deals and offers from Servly
+                  Deals and offers from Ziffix
                 </p>
               </div>
             </div>

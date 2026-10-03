@@ -7,107 +7,174 @@ datasource db {
   provider = "mysql"
 }
 
-model User {
-  id            String         @id @default(cuid())
-  phone         String         @unique
-  password      String
-  name          String?
-  email         String?
-  role          String         @default("customer")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  subscription  Subscription?
-  bookings      Booking[]      @relation("CustomerBookings")
-  technicianBookings Booking[] @relation("TechnicianBookings")
-  payments      Payment[]
-  technicianProfile TechnicianProfile?
-  notifications Notification[]
+model booking {
+  id                              String        @id
+  customerId                      String
+  technicianId                    String?
+  serviceId                       String
+  status                          String        @default("pending")
+  scheduledDate                   DateTime
+  scheduledTime                   String
+  address                         String
+  notes                           String?
+  totalAmount                     Int
+  paymentStatus                   String        @default("pending")
+  createdAt                       DateTime      @default(now())
+  updatedAt                       DateTime
+  user_booking_customerIdTouser   user          @relation("booking_customerIdTouser", fields: [customerId], references: [id], map: "Booking_customerId_fkey")
+  service                         service       @relation(fields: [serviceId], references: [id], map: "Booking_serviceId_fkey")
+  user_booking_technicianIdTouser user?         @relation("booking_technicianIdTouser", fields: [technicianId], references: [id], map: "Booking_technicianId_fkey")
+  bookingitem                     bookingitem[]
+  payment                         payment?
+
+  @@index([customerId], map: "Booking_customerId_fkey")
+  @@index([serviceId], map: "Booking_serviceId_fkey")
+  @@index([technicianId], map: "Booking_technicianId_fkey")
 }
 
-model Subscription {
-  id          String    @id @default(cuid())
-  userId      String   @unique
-  plan        String
-  status      String    @default("active")
-  amount      Int
-  razorpayId  String?
-  startDate   DateTime  @default(now())
-  endDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  user User @relation(fields: [userId], references: [id])
+model bookingitem {
+  id             String          @id
+  bookingId      String
+  serviceId      String
+  variantId      String?
+  serviceName    String
+  variantName    String
+  quantity       Int             @default(1)
+  unitPrice      Int
+  duration       Int?
+  createdAt      DateTime        @default(now())
+  booking        booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade, map: "BookingItem_bookingId_fkey")
+  service        service         @relation(fields: [serviceId], references: [id], map: "BookingItem_serviceId_fkey")
+  servicevariant servicevariant? @relation(fields: [variantId], references: [id], map: "BookingItem_variantId_fkey")
+
+  @@index([bookingId], map: "BookingItem_bookingId_idx")
+  @@index([serviceId], map: "BookingItem_serviceId_idx")
+  @@index([variantId], map: "BookingItem_variantId_idx")
 }
 
-model Service {
-  id            String   @id @default(cuid())
-  name          String
-  description   String
-  category      String
-  basePrice     Int
-  duration      Int
-  image         String?
-  slug          String?  @unique
-  isActive      Boolean  @default(true)
-  rating        Float    @default(0)
-  totalBookings Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  bookings      Booking[]
-}
-
-model Booking {
-  id            String   @id @default(cuid())
-  customerId    String
-  technicianId  String?
-  serviceId     String
-  status        String   @default("pending")
-  scheduledDate DateTime
-  scheduledTime String
-  address       String
-  notes         String?
-  totalAmount   Int
-  paymentStatus String   @default("pending")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  customer      User     @relation("CustomerBookings", fields: [customerId], references: [id])
-  technician    User?    @relation("TechnicianBookings", fields: [technicianId], references: [id])
-  service       Service  @relation(fields: [serviceId], references: [id])
-  payment       Payment?
-}
-
-model Payment {
-  id            String   @id @default(cuid())
-  bookingId     String   @unique
-  customerId    String
-  amount        Int
-  method        String
-  status        String   @default("pending")
-  transactionId String   @unique
-  createdAt     DateTime @default(now())
-  booking       Booking  @relation(fields: [bookingId], references: [id])
-  customer      User     @relation(fields: [customerId], references: [id])
-}
-
-model TechnicianProfile {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  specialties    String
-  rating         Float    @default(5.0)
-  totalJobs      Int      @default(0)
-  status         String   @default("available")
-  certifications String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  user           User     @relation(fields: [userId], references: [id])
-}
-
-model Notification {
-  id        String   @id @default(cuid())
+model notification {
+  id        String   @id
   userId    String
   title     String
   message   String
   type      String   @default("info")
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  user      user     @relation(fields: [userId], references: [id], map: "Notification_userId_fkey")
+
+  @@index([userId], map: "Notification_userId_fkey")
+}
+
+model payment {
+  id            String   @id
+  bookingId     String   @unique(map: "Payment_bookingId_key")
+  customerId    String
+  amount        Int
+  method        String
+  status        String   @default("pending")
+  transactionId String   @unique(map: "Payment_transactionId_key")
+  createdAt     DateTime @default(now())
+  booking       booking  @relation(fields: [bookingId], references: [id], map: "Payment_bookingId_fkey")
+  user          user     @relation(fields: [customerId], references: [id], map: "Payment_customerId_fkey")
+
+  @@index([customerId], map: "Payment_customerId_fkey")
+}
+
+model service {
+  id             String           @id
+  name           String
+  description    String
+  category       String
+  basePrice      Int
+  duration       Int
+  image          String?
+  slug           String?          @unique(map: "Service_slug_key")
+  isActive       Boolean          @default(true)
+  rating         Float            @default(0)
+  totalBookings  Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  booking        booking[]
+  bookingitem    bookingitem[]
+  servicevariant servicevariant[]
+}
+
+model servicevariant {
+  id          String        @id
+  serviceId   String
+  name        String
+  description String?
+  price       Int
+  duration    Int?
+  isActive    Boolean       @default(true)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime
+  bookingitem bookingitem[]
+  service     service       @relation(fields: [serviceId], references: [id], onDelete: Cascade, map: "ServiceVariant_serviceId_fkey")
+
+  @@index([isActive], map: "ServiceVariant_isActive_idx")
+  @@index([serviceId], map: "ServiceVariant_serviceId_idx")
+}
+
+model subscription {
+  id              String    @id
+  userId          String    @unique
+  plan            String
+  status          String    @default("pending")
+  amount          Int
+  paymentMethod   String?
+  paymentReference String?
+  startDate       DateTime?
+  endDate         DateTime?
+  verifiedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime
+  user            user      @relation(fields: [userId], references: [id])
+}
+
+model technicianavailability {
+  id           String   @id
+  technicianId String
+  dayOfWeek    Int
+  isAvailable  Boolean  @default(true)
+  startTime    String?
+  endTime      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime
+  technician   user     @relation(fields: [technicianId], references: [id], onDelete: Cascade, map: "TechnicianAvailability_technicianId_fkey")
+
+  @@unique([technicianId, dayOfWeek], map: "TechnicianAvailability_technicianId_dayOfWeek_key")
+  @@index([technicianId], map: "TechnicianAvailability_technicianId_idx")
+}
+
+model technicianprofile {
+  id             String   @id
+  userId         String   @unique(map: "TechnicianProfile_userId_key")
+  specialties    String
+  rating         Float    @default(5)
+  totalJobs      Int      @default(0)
+  status         String   @default("available")
+  certifications String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  user           user     @relation(fields: [userId], references: [id], map: "TechnicianProfile_userId_fkey")
+}
+
+model user {
+  id                                 String                   @id @default(cuid())
+  phone                              String                   @unique(map: "User_phone_key")
+  password                           String
+  name                               String?
+  email                              String?
+  role                               String                   @default("customer")
+  createdAt                          DateTime                 @default(now())
+  updatedAt                          DateTime                 @updatedAt
+  booking_booking_customerIdTouser   booking[]                @relation("booking_customerIdTouser")
+  booking_booking_technicianIdTouser booking[]                @relation("booking_technicianIdTouser")
+  notification                       notification[]
+  payment                            payment[]
+  subscription                       subscription?
+  technicianavailability             technicianavailability[]
+  technicianprofile                  technicianprofile?
 }

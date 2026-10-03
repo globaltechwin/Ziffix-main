@@ -5,7 +5,7 @@ export const testimonials: Testimonial[] = [
     id: "test_001",
     customerName: "John Doe",
     rating: 5,
-    comment: "The plumber arrived on time and fixed our kitchen sink in under an hour. Professional, clean, and affordable. Will definitely use Servly again!",
+    comment: "The plumber arrived on time and fixed our kitchen sink in under an hour. Professional, clean, and affordable. Will definitely use Ziffix again!",
     service: "Plumbing Repair",
   },
   {

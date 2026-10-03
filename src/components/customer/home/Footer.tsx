@@ -1,5 +1,10 @@
 import Link from "next/link";
-import { Home, Phone, Mail, MapPin } from "lucide-react";
+import {
+  Mail,
+  MapPin,
+  Phone,
+  ArrowUpRight,
+} from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 const companyLinks = [
@@ -8,35 +13,71 @@ const companyLinks = [
   { title: "Contact", href: "/contact" },
   { title: "Privacy", href: "/privacy" },
   { title: "Terms", href: "/terms" },
-  { title: "Partnerships", href: "/partnerships" },
-  { title: "Vendor Signup", href: "/vendor-signup" },
 ];
 
-const otherLinks = [
-  { title: "FAQs", href: "/faqs" },
-  { title: "Servly Blog", href: "/blog" },
-  { title: "Feedback & Suggestions", href: "/feedback" },
-  { title: "Contact Us", href: "/contact" },
+const serviceLinks = [
+  {
+    title: "All Services",
+    href: "/customer/services",
+  },
+  {
+    title: "My Bookings",
+    href: "/customer/bookings",
+  },
+  {
+    title: "Subscriptions",
+    href: "/customer/subscriptions",
+  },
+  {
+    title: "Notifications",
+    href: "/customer/notifications",
+  },
 ];
 
 export function Footer() {
   return (
-    <footer className="border-t border-border bg-white">
-      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-        <div className="grid gap-8 sm:grid-cols-3 my-8">
+    <footer className="border-t bg-slate-950 text-white">
+      <div className="mx-auto max-w-[1400px] px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid gap-10 lg:grid-cols-[1.5fr_1fr_1fr_1.5fr]">
+          {/* Brand */}
+          <div>
+            <Link
+              href="/customer/home"
+              className="inline-flex rounded-lg bg-white px-3 py-2"
+            >
+              <img
+                src="/logo.png"
+                alt="Ziffix"
+                className="h-9 w-auto object-contain"
+              />
+            </Link>
+
+            <p className="mt-5 max-w-sm text-sm leading-6 text-slate-400">
+              Professional home services delivered by
+              trusted service partners at your doorstep.
+            </p>
+
+            <Link
+              href="/customer/services"
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:opacity-90"
+            >
+              Explore Services
+              <ArrowUpRight className="size-4" />
+            </Link>
+          </div>
+
           {/* Company */}
           <div>
-            {/* <div className="mb-3 flex items-center gap-2">
-              <Home className="size-5 text-primary" />
-              <span className="text-lg font-bold text-foreground">Servly</span>
-            </div> */}
-            <h1 className="mb-3 text-sm font-semibold text-foreground">Company</h1>
-            <ul className="space-y-2">
+            <h3 className="text-sm font-semibold">
+              Company
+            </h3>
+
+            <ul className="mt-4 space-y-3">
               {companyLinks.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground"
+                    className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {link.title}
                   </Link>
@@ -45,15 +86,18 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Other Links */}
+          {/* Customer */}
           <div>
-            <h1 className="mb-3 text-sm font-semibold text-foreground">Other Links</h1>
-            <ul className="space-y-2">
-              {otherLinks.map((link) => (
+            <h3 className="text-sm font-semibold">
+              Customer
+            </h3>
+
+            <ul className="mt-4 space-y-3">
+              {serviceLinks.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-sm text-muted-foreground hover:text-foreground"
+                    className="text-sm text-slate-400 transition hover:text-white"
                   >
                     {link.title}
                   </Link>
@@ -62,59 +106,53 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Contact Info */}
+          {/* Contact */}
           <div>
-            <h1 className="mb-3 text-sm font-semibold text-foreground">Contact Us</h1>
-            <div className="space-y-3">
-              <div className="flex items-start gap-2">
+            <h3 className="text-sm font-semibold">
+              Contact Ziffix
+            </h3>
+
+            <div className="mt-4 space-y-4">
+              <div className="flex items-start gap-3">
                 <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
-                <p className="text-sm text-muted-foreground">
-                  Head Office - 2nd Floor, Munshi Pulia, Metro Station, Metro Plaza,
-                  Flat NO - 103, Sector 17, Indira Nagar, Lucknow, Uttar Pradesh 226016
+
+                <p className="text-sm leading-5 text-slate-400">
+                  Head Office - 2nd Floor, Munshi Pulia,
+                  Metro Station, Metro Plaza, Flat NO - 103,
+                  Sector 17, Indira Nagar, Lucknow, Uttar
+                  Pradesh 226016
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+
+              <a
+                href="tel:7667163373"
+                className="flex items-center gap-3 text-sm text-slate-400 transition hover:text-white"
+              >
                 <Phone className="size-4 shrink-0 text-primary" />
-                <a href="tel:7667163373" className="text-sm text-muted-foreground hover:text-foreground">
-                  7667163373
-                </a>
-              </div>
-              <div className="flex items-center gap-2">
+                7667163373
+              </a>
+
+              <a
+                href="mailto:support@servly.in"
+                className="flex items-center gap-3 text-sm text-slate-400 transition hover:text-white"
+              >
                 <Mail className="size-4 shrink-0 text-primary" />
-                <a href="mailto:support@servly.in" className="text-sm text-muted-foreground hover:text-foreground">
-                  support@servly.in
-                </a>
-              </div>
+                support@servly.in
+              </a>
             </div>
           </div>
         </div>
 
-        {/* <Separator className="my-8" /> */}
+        <Separator className="my-10 bg-slate-800" />
 
-        {/* About */}
-        <div>
-          <h3 className="mb-3 text-sm font-semibold text-foreground">About Servly</h3>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Online home service subscription packages &amp; on-demand home cleaning
-            services. SERVLY is currently the largest cleaning service provider
-            with growing business opportunities in the Indian market.
+        <div className="flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            © {new Date().getFullYear()} Ziffix. All
+            rights reserved.
           </p>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            With growing jobs in urban areas, people don&apos;t have ample time
-            to take care of everything on their own. We serve people with every
-            possible service at their doorsteps at a premium and reliable cost.
-          </p>
-        </div>
 
-        <Separator className="my-8" />
-
-        {/* Copyright */}
-        <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
-          <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} Servly. All rights reserved.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Made with <span className="text-red-500">&hearts;</span> by Servly
+          <p>
+            Professional home services at your doorstep.
           </p>
         </div>
       </div>

@@ -1,129 +1,91 @@
-import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-function getAdminFromSession(session: string): string | null {
+export async function GET() {
   try {
-    const decoded = JSON.parse(atob(session));
-    if (decoded.role !== "admin") return null;
-    return decoded.userId;
-  } catch {
-    return null;
-  }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    const sessionCookie = request.cookies.get("session")?.value;
-    if (!sessionCookie || !getAdminFromSession(sessionCookie)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const technicians = await prisma.user.findMany({
-      where: { role: "technician" },
+      where: {
+        role: "technician",
+      },
       select: {
         id: true,
         phone: true,
         name: true,
         email: true,
+        role: true,
         createdAt: true,
-        technicianProfile: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
 
-    return NextResponse.json({ technicians });
-  } catch (error) {
-    console.error("List technicians error:", error);
-    return NextResponse.json({ error: "Failed to list technicians" }, { status: 500 });
-  }
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const sessionCookie = request.cookies.get("session")?.value;
-    if (!sessionCookie || !getAdminFromSession(sessionCookie)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { phone, password, name, specialties, certifications } = await request.json();
-
-    if (!phone || typeof phone !== "string" || phone.length !== 10) {
-      return NextResponse.json({ error: "Valid 10-digit phone number required" }, { status: 400 });
-    }
-    if (!password || typeof password !== "string" || password.length < 6) {
-      return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
-    }
-    if (!specialties || typeof specialties !== "string") {
-      return NextResponse.json({ error: "Specialties are required" }, { status: 400 });
-    }
-
-    const existing = await prisma.user.findUnique({ where: { phone } });
-    if (existing) {
-      return NextResponse.json({ error: "Account already exists with this phone number" }, { status: 409 });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const technician = await prisma.user.create({
-      data: {
-        phone,
-        password: hashedPassword,
-        name: name || null,
-        role: "technician",
-        technicianProfile: {
-          create: {
-            specialties,
-            certifications: certifications || null,
+        technicianprofile: {
+          select: {
+            id: true,
+            userId: true,
+            specialties: true,
+            certifications: true,
+            rating: true,
+            totalJobs: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
           },
         },
       },
-      select: {
-        id: true,
-        phone: true,
-        name: true,
-        role: true,
-        technicianProfile: true,
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
-    return NextResponse.json({ technician });
-  } catch (error) {
-    console.error("Create technician error:", error);
-    return NextResponse.json({ error: "Failed to create technician" }, { status: 500 });
-  }
-}
+    const formattedTechnicians = technicians.map((technician) => ({
+      id: technician.id,
+      phone: technician.phone,
+      name: technician.name || "Technician",
+      email: technician.email,
+      role: technician.role,
+      createdAt: technician.createdAt,
 
-export async function PATCH(request: NextRequest) {
-  try {
-    const sessionCookie = request.cookies.get("session")?.value;
-    if (!sessionCookie || !getAdminFromSession(sessionCookie)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+      // Convert Prisma's lowercase relation name
+      // to the camelCase name expected by the frontend.
+      technicianProfile: technician.technicianprofile
+        ? {
+            id: technician.technicianprofile.id,
+            userId: technician.technicianprofile.userId,
 
-    const { userId, specialties, certifications, status } = await request.json();
+            specialties: technician.technicianprofile.specialties
+              ? technician.technicianprofile.specialties
+                  .split(",")
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+              : [],
 
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
-    }
+            certifications: technician.technicianprofile.certifications
+              ? technician.technicianprofile.certifications
+                  .split(",")
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+              : [],
 
-    const profile = await prisma.technicianProfile.findUnique({ where: { userId } });
-    if (!profile) {
-      return NextResponse.json({ error: "Technician profile not found" }, { status: 404 });
-    }
+            rating: technician.technicianprofile.rating,
+            totalJobs: technician.technicianprofile.totalJobs,
+            status: technician.technicianprofile.status,
 
-    const updated = await prisma.technicianProfile.update({
-      where: { userId },
-      data: {
-        ...(specialties !== undefined && { specialties }),
-        ...(certifications !== undefined && { certifications }),
-        ...(status !== undefined && { status }),
-      },
+            createdAt: technician.technicianprofile.createdAt,
+            updatedAt: technician.technicianprofile.updatedAt,
+          }
+        : null,
+    }));
+
+    return NextResponse.json({
+      technicians: formattedTechnicians,
     });
-
-    return NextResponse.json({ technicianProfile: updated });
   } catch (error) {
-    console.error("Update technician error:", error);
-    return NextResponse.json({ error: "Failed to update technician" }, { status: 500 });
+    console.error("List technicians error:", error);
+
+    return NextResponse.json(
+      {
+        error: "Failed to load technicians",
+      },
+      {
+        status: 500,
+      }
+    );
   }
 }
