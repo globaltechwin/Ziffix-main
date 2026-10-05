@@ -806,10 +806,9 @@ export default function AdminTechniciansPage() {
                 <div className="space-y-1">
                   {days.map((day, index) => {
                     const availability =
-                      view.technicianProfile?.availability.find(
-                        (item) =>
-                          item.dayOfWeek === index
-                      );
+  (view.technicianProfile?.availability ?? []).find(
+    (item) => item.dayOfWeek === index
+  );
 
                     return (
                       <div

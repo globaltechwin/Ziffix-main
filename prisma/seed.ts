@@ -177,7 +177,7 @@ async function main() {
   const prisma = createPrismaClient();
 
   try {
-    const phone = "9999999999";
+    const phone = "9677192579";
     const password = "admin123";
     const name = "Admin";
 
