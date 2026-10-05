@@ -8,11 +8,13 @@ import {
   MoreHorizontal,
   Pencil,
   Star,
+  Trash2,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/admin/shared/PageHeader";
 import { SearchFilter } from "@/components/admin/shared/SearchFilter";
 import { StatusBadge } from "@/components/admin/shared/StatusBadge";
+import { ConfirmDialog } from "@/components/admin/shared/ConfirmDialog";
 
 import {
   Table,
@@ -105,6 +107,8 @@ export default function AdminServicesPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleteService, setDeleteService] = useState<Service | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [editService, setEditService] = useState<Service | null>(null);
   const [priceService, setPriceService] = useState<Service | null>(null);
@@ -363,6 +367,43 @@ export default function AdminServicesPage() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteService) return;
+
+    setDeleting(true);
+
+    try {
+      const response = await fetch("/api/admin/services", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ serviceId: deleteService.id }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to delete service");
+      }
+
+      setData((current) =>
+        current.filter((service) => service.id !== deleteService.id),
+      );
+      toast.success("Service deleted successfully");
+      setDeleteService(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to delete service",
+      );
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -778,6 +819,14 @@ export default function AdminServicesPage() {
                           <Pencil className="mr-2 size-4" />
                           Edit Service
                         </DropdownMenuItem>
+
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteService(service)}
+                        >
+                          <Trash2 className="mr-2 size-4" />
+                          Delete Service
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -821,6 +870,21 @@ export default function AdminServicesPage() {
           {formContent(handleEdit)}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteService}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setDeleteService(null);
+        }}
+        title="Delete Service"
+        description={
+          deleteService
+            ? `Are you sure you want to delete ${deleteService.name}? Services already used by bookings cannot be deleted and should be deactivated instead.`
+            : "Are you sure you want to delete this service?"
+        }
+        onConfirm={handleDelete}
+        confirmLabel={deleting ? "Deleting..." : "Delete Service"}
+      />
 
       {/* Set Price */}
       <Dialog

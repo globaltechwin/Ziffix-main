@@ -366,3 +366,55 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
+
+
+export async function DELETE(request: NextRequest) {
+  try {
+    if (!isAdmin(request)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const url = new URL(request.url);
+    const serviceId = String(
+      body.serviceId || url.searchParams.get("serviceId") || "",
+    ).trim();
+
+    if (!serviceId) {
+      return NextResponse.json({ error: "serviceId is required" }, { status: 400 });
+    }
+
+    const service = await prisma.service.findUnique({
+      where: { id: serviceId },
+      select: { id: true, name: true },
+    });
+
+    if (!service) {
+      return NextResponse.json({ error: "Service not found" }, { status: 404 });
+    }
+
+    const [bookingCount, bookingItemCount] = await Promise.all([
+      prisma.booking.count({ where: { serviceId } }),
+      prisma.bookingitem.count({ where: { serviceId } }),
+    ]);
+
+    if (bookingCount > 0 || bookingItemCount > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This service cannot be deleted because it is already used by existing bookings. Deactivate it instead.",
+          bookingCount,
+          bookingItemCount,
+        },
+        { status: 409 },
+      );
+    }
+
+    await prisma.service.delete({ where: { id: serviceId } });
+
+    return NextResponse.json({ success: true, serviceId });
+  } catch (error) {
+    console.error("Delete service error:", error);
+    return NextResponse.json({ error: "Failed to delete service" }, { status: 500 });
+  }
+}
