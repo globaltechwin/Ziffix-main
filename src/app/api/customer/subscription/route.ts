@@ -1,38 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
+import crypto from "crypto";
+
 import { prisma } from "@/lib/prisma";
 
-type PlanId = "free" | "starter" | "pro";
+type PlanConfig = {
+  name: string;
+  amount: number;
+  durationDays: number;
+};
 
-const PLAN_CONFIG: Record<
-  PlanId,
-  {
-    amount: number;
-    durationDays: number;
-  }
-> = {
+const PLANS: Record<string, PlanConfig> = {
   free: {
+    name: "Free",
     amount: 0,
-    durationDays: 0,
+    durationDays: 30,
   },
+
   starter: {
+    name: "Starter",
     amount: 499,
     durationDays: 30,
   },
+
   pro: {
+    name: "Pro",
     amount: 999,
     durationDays: 30,
   },
 };
 
-const PLAN_ORDER: Record<PlanId, number> = {
-  free: 0,
-  starter: 1,
-  pro: 2,
-};
+/* =========================================================
+   SESSION
+========================================================= */
 
 function getUserIdFromSession(
-  session: string | undefined,
+  session: string | undefined
 ): string | null {
   if (!session) {
     return null;
@@ -51,30 +53,29 @@ function getUserIdFromSession(
   }
 }
 
-function isValidPlan(value: unknown): value is PlanId {
-  return (
-    value === "free" ||
-    value === "starter" ||
-    value === "pro"
-  );
-}
-
 /* =========================================================
    GET CURRENT SUBSCRIPTION
 ========================================================= */
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest
+) {
   try {
     const sessionCookie =
       request.cookies.get("session")?.value;
 
-    const userId = getUserIdFromSession(sessionCookie);
+    const userId =
+      getUserIdFromSession(sessionCookie);
 
     if (!userId) {
-      return NextResponse.json({
-        plan: "free",
-        status: "inactive",
-      });
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
+      );
     }
 
     const subscription =
@@ -82,302 +83,67 @@ export async function GET(request: NextRequest) {
         where: {
           userId,
         },
+
         select: {
           id: true,
           userId: true,
           plan: true,
           status: true,
           amount: true,
+          paymentMethod: true,
+          paymentReference: true,
           startDate: true,
           endDate: true,
+          verifiedAt: true,
           createdAt: true,
           updatedAt: true,
         },
       });
 
-    if (!subscription) {
-      return NextResponse.json({
-        plan: "free",
-        status: "inactive",
-      });
-    }
-
-    /*
-     * An expired subscription is treated as Free.
-     */
-    if (
-      subscription.endDate &&
-      new Date(subscription.endDate).getTime() <
-        Date.now()
-    ) {
-      return NextResponse.json({
-        plan: "free",
-        status: "expired",
-        subscription,
-      });
-    }
-
-    /*
-     * Only an active subscription should make
-     * the customer appear subscribed.
-     */
-    if (subscription.status !== "active") {
-      return NextResponse.json({
-        plan: "free",
-        status: subscription.status,
-        subscription,
-      });
-    }
-
     return NextResponse.json({
-      plan: subscription.plan,
-      status: subscription.status,
-      amount: subscription.amount,
-      startDate: subscription.startDate,
-      endDate: subscription.endDate,
+      success: true,
+
+      plan:
+        subscription?.plan ||
+        "free",
+
       subscription,
     });
   } catch (error) {
     console.error(
       "Get customer subscription error:",
-      error,
+      error
     );
 
-    return NextResponse.json(
-      {
-        error: "Failed to load subscription",
-      },
-      {
-        status: 500,
-      },
-    );
-  }
-}
-
-/* =========================================================
-   PATCH SUBSCRIPTION
-   Used for downgrades / Free plan changes.
-========================================================= */
-
-export async function PATCH(request: NextRequest) {
-  try {
-    const sessionCookie =
-      request.cookies.get("session")?.value;
-
-    const userId = getUserIdFromSession(sessionCookie);
-
-    if (!userId) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-        },
-        {
-          status: 401,
-        },
-      );
-    }
-
-    const body = await request.json();
-
-    const requestedPlan = body?.plan;
-
-    if (!isValidPlan(requestedPlan)) {
-      return NextResponse.json(
-        {
-          error: "Invalid plan",
-        },
-        {
-          status: 400,
-        },
-      );
-    }
-
-    const existing =
-      await prisma.subscription.findUnique({
-        where: {
-          userId,
-        },
-        select: {
-          id: true,
-          userId: true,
-          plan: true,
-          status: true,
-          amount: true,
-          startDate: true,
-          endDate: true,
-        },
-      });
-
-    /*
-     * -------------------------------------------------------
-     * FREE PLAN
-     * -------------------------------------------------------
-     */
-
-    if (requestedPlan === "free") {
-      /*
-       * If there is no subscription, customer is already Free.
-       */
-      if (!existing) {
-        return NextResponse.json({
-          success: true,
-          plan: "free",
-          status: "inactive",
-        });
-      }
-
-      /*
-       * If a paid plan is still active, don't immediately
-       * destroy it. Tell the customer when it ends.
-       */
-      if (
-        existing.endDate &&
-        new Date(existing.endDate).getTime() >
-          Date.now()
-      ) {
-        return NextResponse.json({
-          success: true,
-          plan: "free",
-          scheduled: true,
-          currentPlan: existing.plan,
-          endDate: existing.endDate,
-          message: `Your ${existing.plan} plan remains active until ${new Date(
-            existing.endDate,
-          ).toLocaleDateString("en-IN")}.`,
-        });
-      }
-
-      const updated =
-        await prisma.subscription.update({
-          where: {
-            userId,
-          },
-          data: {
-            plan: "free",
-            amount: 0,
-            status: "active",
-            startDate: new Date(),
-            endDate: null,
-            updatedAt: new Date(),
-          },
-        });
-
-      return NextResponse.json({
-        success: true,
-        plan: updated.plan,
-        status: updated.status,
-        subscription: updated,
-      });
-    }
-
-    /*
-     * -------------------------------------------------------
-     * PAID PLAN
-     * -------------------------------------------------------
-     *
-     * PATCH is intentionally only for downgrades.
-     * Upgrades should come through the manual payment page.
-     */
-
-    if (existing) {
-      const currentPlan = isValidPlan(existing.plan)
-        ? existing.plan
-        : "free";
-
-      if (
-        PLAN_ORDER[requestedPlan] >
-        PLAN_ORDER[currentPlan]
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "Upgrades require manual payment verification.",
-          },
-          {
-            status: 400,
-          },
-        );
-      }
-
-      const config =
-        PLAN_CONFIG[requestedPlan];
-
-      const startDate = new Date();
-
-      const endDate = new Date();
-
-      endDate.setDate(
-        endDate.getDate() + config.durationDays,
-      );
-
-      const updated =
-        await prisma.subscription.update({
-          where: {
-            userId,
-          },
-          data: {
-            plan: requestedPlan,
-            amount: config.amount,
-            status: "active",
-            startDate,
-            endDate,
-            updatedAt: new Date(),
-          },
-        });
-
-      return NextResponse.json({
-        success: true,
-        plan: updated.plan,
-        status: updated.status,
-        amount: updated.amount,
-        startDate: updated.startDate,
-        endDate: updated.endDate,
-        subscription: updated,
-      });
-    }
-
-    /*
-     * No previous subscription.
-     *
-     * We don't activate a paid subscription here because
-     * paid plans must go through the manual payment flow.
-     */
     return NextResponse.json(
       {
         error:
-          "Please complete manual payment for this plan.",
-      },
-      {
-        status: 400,
-      },
-    );
-  } catch (error) {
-    console.error(
-      "Update customer subscription error:",
-      error,
-    );
-
-    return NextResponse.json(
-      {
-        error: "Failed to update subscription",
+          "Failed to load subscription",
       },
       {
         status: 500,
-      },
+      }
     );
   }
 }
 
 /* =========================================================
-   POST MANUAL SUBSCRIPTION REQUEST
+   POST MANUAL SUBSCRIPTION PAYMENT
 ========================================================= */
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest
+) {
   try {
+    /* -------------------------------------------------------
+       AUTH
+    ------------------------------------------------------- */
+
     const sessionCookie =
       request.cookies.get("session")?.value;
 
-    const userId = getUserIdFromSession(sessionCookie);
+    const userId =
+      getUserIdFromSession(sessionCookie);
 
     if (!userId) {
       return NextResponse.json(
@@ -386,161 +152,587 @@ export async function POST(request: NextRequest) {
         },
         {
           status: 401,
-        },
+        }
       );
     }
 
-    const body = await request.json();
+    /* -------------------------------------------------------
+       REQUEST
+    ------------------------------------------------------- */
 
-    const requestedPlan = body?.plan;
+    const body =
+      await request.json();
 
-    if (!isValidPlan(requestedPlan)) {
+    const plan =
+      typeof body.plan === "string"
+        ? body.plan.trim().toLowerCase()
+        : "";
+
+    const paymentMethod =
+      typeof body.paymentMethod === "string"
+        ? body.paymentMethod.trim().toLowerCase()
+        : "manual";
+
+    const paymentReference =
+      typeof body.paymentReference === "string"
+        ? body.paymentReference.trim()
+        : "";
+
+    /* -------------------------------------------------------
+       VALIDATE PLAN
+    ------------------------------------------------------- */
+
+    const planConfig =
+      PLANS[plan];
+
+    if (!planConfig) {
       return NextResponse.json(
         {
-          error: "Invalid plan",
+          error: "Invalid subscription plan",
         },
         {
           status: 400,
-        },
+        }
       );
     }
 
-    if (requestedPlan === "free") {
+    /* -------------------------------------------------------
+       FREE PLAN
+    ------------------------------------------------------- */
+
+    if (plan === "free") {
       return NextResponse.json(
         {
           error:
-            "Free plan does not require payment.",
+            "Free plan does not require payment",
         },
         {
           status: 400,
-        },
+        }
       );
     }
 
-    const config =
-      PLAN_CONFIG[requestedPlan];
+    /* -------------------------------------------------------
+       VALIDATE PAYMENT REFERENCE
+    ------------------------------------------------------- */
 
-    /*
-     * Check whether the customer already has
-     * an active subscription.
-     */
+    if (!paymentReference) {
+      return NextResponse.json(
+        {
+          error:
+            "UTR / transaction reference is required",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (paymentReference.length < 6) {
+      return NextResponse.json(
+        {
+          error:
+            "Please enter a valid UTR / transaction reference",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    /* -------------------------------------------------------
+       VALIDATE PAYMENT METHOD
+    ------------------------------------------------------- */
+
+    const allowedMethods = [
+      "bank",
+      "gpay",
+      "qr",
+      "manual",
+    ];
+
+    const normalizedPaymentMethod =
+      allowedMethods.includes(
+        paymentMethod
+      )
+        ? paymentMethod
+        : "manual";
+
+    /* -------------------------------------------------------
+       EXISTING SUBSCRIPTION
+    ------------------------------------------------------- */
+
     const existing =
       await prisma.subscription.findUnique({
         where: {
           userId,
         },
-        select: {
-          id: true,
-          plan: true,
-          status: true,
-          amount: true,
-          startDate: true,
-          endDate: true,
-        },
       });
-
-    if (
-      existing &&
-      existing.status === "active" &&
-      existing.endDate &&
-      new Date(existing.endDate).getTime() >
-        Date.now()
-    ) {
-      const currentPlan = isValidPlan(existing.plan)
-        ? existing.plan
-        : "free";
-
-      if (
-        PLAN_ORDER[requestedPlan] <=
-        PLAN_ORDER[currentPlan]
-      ) {
-        return NextResponse.json({
-          success: true,
-          alreadyActive: true,
-          plan: existing.plan,
-          status: existing.status,
-          subscription: existing,
-        });
-      }
-    }
 
     /*
-     * IMPORTANT:
-     *
-     * This creates a PENDING subscription request.
-     *
-     * It does NOT mark the plan as active.
-     *
-     * Admin/manual-payment verification should later
-     * change status from "pending" to "active".
+     * If the same customer already has an active plan,
+     * do not replace it until the new payment is verified.
      */
-    const now = new Date();
+    if (
+      existing?.status === "active" &&
+      existing.plan === plan
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "You are already subscribed to this plan",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    /* -------------------------------------------------------
+       CREATE / UPDATE PENDING SUBSCRIPTION
+    ------------------------------------------------------- */
+
+    const subscriptionId =
+      existing?.id ||
+      crypto.randomUUID();
 
     const subscription =
-      await prisma.subscription.upsert({
+      existing
+        ? await prisma.subscription.update({
+            where: {
+              userId,
+            },
+
+            data: {
+              plan,
+
+              status:
+                "pending",
+
+              amount:
+                planConfig.amount,
+
+              paymentMethod:
+                normalizedPaymentMethod,
+
+              paymentReference,
+
+              startDate:
+                null,
+
+              endDate:
+                null,
+
+              verifiedAt:
+                null,
+
+              updatedAt:
+                new Date(),
+            },
+
+            select: {
+              id: true,
+              userId: true,
+              plan: true,
+              status: true,
+              amount: true,
+              paymentMethod: true,
+              paymentReference: true,
+              startDate: true,
+              endDate: true,
+              verifiedAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : await prisma.subscription.create({
+            data: {
+              id:
+                subscriptionId,
+
+              userId,
+
+              plan,
+
+              status:
+                "pending",
+
+              amount:
+                planConfig.amount,
+
+              paymentMethod:
+                normalizedPaymentMethod,
+
+              paymentReference,
+
+              startDate:
+                null,
+
+              endDate:
+                null,
+
+              verifiedAt:
+                null,
+
+              updatedAt:
+                new Date(),
+            },
+
+            select: {
+              id: true,
+              userId: true,
+              plan: true,
+              status: true,
+              amount: true,
+              paymentMethod: true,
+              paymentReference: true,
+              startDate: true,
+              endDate: true,
+              verifiedAt: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+
+    /* -------------------------------------------------------
+       CUSTOMER NOTIFICATION
+    ------------------------------------------------------- */
+
+    await prisma.notification.create({
+      data: {
+        id:
+          crypto.randomUUID(),
+
+        userId,
+
+        title:
+          "Subscription payment submitted",
+
+        message:
+          `Your ${planConfig.name} plan payment of ₹${planConfig.amount.toLocaleString(
+            "en-IN"
+          )} has been submitted for verification. UTR: ${paymentReference}`,
+
+        type:
+          "payment",
+
+        isRead:
+          false,
+
+        createdAt:
+          new Date(),
+      },
+    });
+
+    /* -------------------------------------------------------
+       ADMIN NOTIFICATIONS
+    ------------------------------------------------------- */
+
+    const admins =
+      await prisma.user.findMany({
         where: {
-          userId,
-        },
-
-        update: {
-          plan: requestedPlan,
-          amount: config.amount,
-          status: "pending",
-          startDate: now,
-          endDate: null,
-          updatedAt: now,
-        },
-
-        create: {
-          id: randomUUID(),
-          userId,
-          plan: requestedPlan,
-          amount: config.amount,
-          status: "pending",
-          startDate: now,
-          endDate: null,
-          createdAt: now,
-          updatedAt: now,
+          role: "admin",
         },
 
         select: {
           id: true,
-          userId: true,
-          plan: true,
-          amount: true,
-          status: true,
-          startDate: true,
-          endDate: true,
-          createdAt: true,
-          updatedAt: true,
         },
       });
+
+    if (admins.length > 0) {
+      await prisma.notification.createMany({
+        data: admins.map((admin) => ({
+          id:
+            crypto.randomUUID(),
+
+          userId:
+            admin.id,
+
+          title:
+            "New subscription payment",
+
+          message:
+            `A customer submitted ₹${planConfig.amount.toLocaleString(
+              "en-IN"
+            )} for the ${planConfig.name} plan. UTR: ${paymentReference}`,
+
+          type:
+            "payment",
+
+          isRead:
+            false,
+
+          createdAt:
+            new Date(),
+        })),
+      });
+    }
+
+    /* -------------------------------------------------------
+       RESPONSE
+    ------------------------------------------------------- */
 
     return NextResponse.json(
       {
         success: true,
+
         message:
-          "Subscription payment submitted for manual verification.",
+          "Payment submitted successfully. Waiting for admin verification.",
+
         subscription,
+
+        redirectTo:
+          `/customer/payment/success?plan=${encodeURIComponent(
+            plan
+          )}&amount=${encodeURIComponent(
+            String(planConfig.amount)
+          )}`,
       },
       {
         status: 201,
-      },
+      }
     );
   } catch (error) {
     console.error(
       "Create manual subscription request error:",
-      error,
+      error
     );
 
     return NextResponse.json(
       {
         error:
-          "Failed to create subscription payment request",
+          "Failed to submit subscription payment",
       },
       {
         status: 500,
+      }
+    );
+  }
+}
+
+/* =========================================================
+   PATCH DOWNGRADE / FREE PLAN
+========================================================= */
+
+export async function PATCH(
+  request: NextRequest
+) {
+  try {
+    const sessionCookie =
+      request.cookies.get("session")?.value;
+
+    const userId =
+      getUserIdFromSession(sessionCookie);
+
+    if (!userId) {
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
+      );
+    }
+
+    const body =
+      await request.json();
+
+    const plan =
+      typeof body.plan === "string"
+        ? body.plan.trim().toLowerCase()
+        : "";
+
+    if (
+      !["free", "starter", "pro"].includes(
+        plan
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: "Invalid plan",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const existing =
+      await prisma.subscription.findUnique({
+        where: {
+          userId,
+        },
+
+        select: {
+          id: true,
+          plan: true,
+          status: true,
+          amount: true,
+          endDate: true,
+        },
+      });
+
+    /* -------------------------------------------------------
+       FREE
+    ------------------------------------------------------- */
+
+    if (plan === "free") {
+      if (!existing) {
+        return NextResponse.json({
+          plan: "free",
+        });
+      }
+
+      return NextResponse.json({
+        plan: "free",
+
+        scheduled:
+          true,
+
+        endDate:
+          existing.endDate,
+
+        message:
+          existing.endDate
+            ? `Your ${existing.plan} plan remains active until ${new Date(
+                existing.endDate
+              ).toLocaleDateString(
+                "en-IN"
+              )}. After that, you'll be on the Free plan.`
+            : "Your plan will be changed to Free.",
+      });
+    }
+
+    /* -------------------------------------------------------
+       EXISTING PLAN
+    ------------------------------------------------------- */
+
+    if (existing) {
+      const planOrder: Record<
+        string,
+        number
+      > = {
+        free: 0,
+        starter: 1,
+        pro: 2,
+      };
+
+      if (
+        planOrder[plan] >
+        planOrder[existing.plan]
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "Upgrades require payment",
+          },
+          {
+            status: 400,
+          }
+        );
+      }
+
+      const amount =
+        plan === "starter"
+          ? 499
+          : plan === "pro"
+            ? 999
+            : 0;
+
+      const updated =
+        await prisma.subscription.update({
+          where: {
+            userId,
+          },
+
+          data: {
+            plan,
+
+            status:
+              "active",
+
+            amount,
+
+            paymentMethod:
+              null,
+
+            paymentReference:
+              null,
+
+            verifiedAt:
+              new Date(),
+
+            updatedAt:
+              new Date(),
+          },
+        });
+
+      return NextResponse.json({
+        plan:
+          updated.plan,
+      });
+    }
+
+    /* -------------------------------------------------------
+       CREATE FREE
+    ------------------------------------------------------- */
+
+    if (plan !== "free") {
+      return NextResponse.json(
+        {
+          error:
+            "Upgrades require payment",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const created =
+      await prisma.subscription.create({
+        data: {
+          id:
+            crypto.randomUUID(),
+
+          userId,
+
+          plan:
+            "free",
+
+          status:
+            "active",
+
+          amount:
+            0,
+
+          startDate:
+            new Date(),
+
+          updatedAt:
+            new Date(),
+        },
+      });
+
+    return NextResponse.json({
+      plan:
+        created.plan,
+    });
+  } catch (error) {
+    console.error(
+      "Update subscription error:",
+      error
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          "Failed to update subscription",
       },
+      {
+        status: 500,
+      }
     );
   }
 }
